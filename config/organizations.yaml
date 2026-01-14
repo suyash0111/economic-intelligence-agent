@@ -1,0 +1,520 @@
+# Economic Intelligence Agent - Organizations Configuration
+# This file defines all organizations to monitor for economic intelligence
+# Total: 44 organizations (39 original + 5 major central banks)
+
+organizations:
+  # ============================================================================
+  # MAJOR CENTRAL BANKS (5) - NEW
+  # ============================================================================
+
+  - name: "Federal Reserve (Fed)"
+    short_name: "Fed"
+    category: "Central Bank"
+    description: "US central bank, world's most influential monetary policy maker"
+    key_reports: ["FOMC Statement", "Beige Book", "Financial Stability Report", "Monetary Policy Report"]
+    feeds:
+      - "https://www.federalreserve.gov/feeds/press_all.xml"
+    scrape_urls:
+      - url: "https://www.federalreserve.gov/newsevents/pressreleases.htm"
+        type: "press_releases"
+      - url: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+        type: "fomc"
+
+  - name: "European Central Bank (ECB)"
+    short_name: "ECB"
+    category: "Central Bank"
+    description: "Eurozone monetary policy, banking supervision"
+    key_reports: ["Monetary Policy Decisions", "Economic Bulletin", "Financial Stability Review"]
+    feeds:
+      - "https://www.ecb.europa.eu/rss/press.html"
+    scrape_urls:
+      - url: "https://www.ecb.europa.eu/press/pr/html/index.en.html"
+        type: "press_releases"
+      - url: "https://www.ecb.europa.eu/pub/html/index.en.html"
+        type: "publications"
+
+  - name: "Bank of England (BoE)"
+    short_name: "BoE"
+    category: "Central Bank"
+    description: "UK central bank, monetary policy and financial stability"
+    key_reports: ["Monetary Policy Summary", "Financial Stability Report", "Inflation Report"]
+    feeds:
+      - "https://www.bankofengland.co.uk/rss/news"
+    scrape_urls:
+      - url: "https://www.bankofengland.co.uk/news"
+        type: "news"
+      - url: "https://www.bankofengland.co.uk/monetary-policy-summary-and-minutes"
+        type: "monetary_policy"
+
+  - name: "Bank of Japan (BoJ)"
+    short_name: "BoJ"
+    category: "Central Bank"
+    description: "Japan's central bank, unique monetary policies (YCC, QQE)"
+    key_reports: ["Monetary Policy Statement", "Outlook Report", "Financial System Report"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm"
+        type: "monetary_policy"
+      - url: "https://www.boj.or.jp/en/announcements/release_index.htm"
+        type: "releases"
+
+  - name: "People's Bank of China (PBoC)"
+    short_name: "PBoC"
+    category: "Central Bank"
+    description: "China's central bank, monetary policy and financial regulation"
+    key_reports: ["Monetary Policy Report", "Financial Stability Report"]
+    feeds: []
+    scrape_urls:
+      - url: "http://www.pbc.gov.cn/english/130721/index.html"
+        type: "news"
+      - url: "http://www.pbc.gov.cn/english/130727/index.html"
+        type: "monetary_policy"
+
+  # ============================================================================
+  # INTERNATIONAL & MULTILATERAL ORGANIZATIONS (11)
+  
+  - name: "International Monetary Fund (IMF)"
+    short_name: "IMF"
+    category: "International"
+    description: "Global financial stability, balance of payments, and macroeconomic policy coordination"
+    key_reports: ["World Economic Outlook", "Global Financial Stability Report", "Fiscal Monitor"]
+    feeds:
+      - "https://www.imf.org/en/News/rss"
+    scrape_urls:
+      - url: "https://www.imf.org/en/Publications"
+        type: "publications"
+      - url: "https://www.imf.org/en/News"
+        type: "news"
+
+  - name: "World Bank Group"
+    short_name: "World Bank"
+    category: "International"
+    description: "Long-term economic development, poverty reduction, and infrastructure financing"
+    key_reports: ["World Development Report", "Global Economic Prospects", "Poverty and Shared Prosperity"]
+    feeds:
+      - "https://blogs.worldbank.org/feed"
+    scrape_urls:
+      - url: "https://www.worldbank.org/en/news/all"
+        type: "news"
+      - url: "https://www.worldbank.org/en/research"
+        type: "research"
+
+  - name: "World Trade Organization (WTO)"
+    short_name: "WTO"
+    category: "International"
+    description: "International trade rules, negotiations, and data"
+    key_reports: ["World Trade Report", "Trade Statistics and Outlook"]
+    feeds:
+      - "https://www.wto.org/english/news_e/news_e.rss"
+    scrape_urls:
+      - url: "https://www.wto.org/english/news_e/news_e.htm"
+        type: "news"
+
+  - name: "Organization for Economic Co-operation and Development (OECD)"
+    short_name: "OECD"
+    category: "International"
+    description: "Economic policy coordination and data analysis for developed economies"
+    key_reports: ["OECD Economic Outlook", "Employment Outlook", "Going for Growth"]
+    feeds:
+      - "https://www.oecd.org/en/rss/all-news.xml"
+    scrape_urls:
+      - url: "https://www.oecd.org/en/publications.html"
+        type: "publications"
+
+  - name: "World Economic Forum (WEF)"
+    short_name: "WEF"
+    category: "International"
+    description: "Public-private cooperation, global competitiveness and risk reports"
+    key_reports: ["Global Competitiveness Report", "Global Risks Report", "Future of Jobs Report"]
+    feeds:
+      - "https://www.weforum.org/agenda/feed"
+    scrape_urls:
+      - url: "https://www.weforum.org/publications"
+        type: "reports"
+
+  - name: "Bank for International Settlements (BIS)"
+    short_name: "BIS"
+    category: "International"
+    description: "Central bank for central banks, global monetary and financial stability"
+    key_reports: ["BIS Annual Report", "BIS Quarterly Review", "BIS Working Papers"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.bis.org/list/cbspeeches/index.htm"
+        type: "speeches"
+      - url: "https://www.bis.org/publ/work.htm"
+        type: "working_papers"
+
+  - name: "United Nations Conference on Trade and Development (UNCTAD)"
+    short_name: "UNCTAD"
+    category: "International"
+    description: "Supports developing countries in global trade, investment, and development"
+    key_reports: ["World Investment Report", "Trade and Development Report", "Technology and Innovation Report"]
+    feeds:
+      - "https://unctad.org/rss.xml"
+    scrape_urls:
+      - url: "https://unctad.org/news"
+        type: "news"
+
+  - name: "International Labour Organization (ILO)"
+    short_name: "ILO"
+    category: "International"
+    description: "Labor standards, social protection, and employment data/statistics globally"
+    key_reports: ["World Employment and Social Outlook", "Global Wage Report"]
+    feeds:
+      - "https://www.ilo.org/rss/news-en.xml"
+    scrape_urls:
+      - url: "https://www.ilo.org/publications"
+        type: "publications"
+
+  - name: "United Nations Development Programme (UNDP)"
+    short_name: "UNDP"
+    category: "International"
+    description: "Human development metrics and sustainable development goals"
+    key_reports: ["Human Development Report"]
+    feeds:
+      - "https://www.undp.org/rss.xml"
+    scrape_urls:
+      - url: "https://www.undp.org/publications"
+        type: "publications"
+
+  - name: "National Bureau of Economic Research (NBER)"
+    short_name: "NBER"
+    category: "International"
+    description: "US-based research organization, business cycle dating, extensive working papers"
+    key_reports: ["NBER Working Papers", "Business Cycle Dating"]
+    feeds:
+      - "https://www.nber.org/rss/new.xml"
+    scrape_urls:
+      - url: "https://www.nber.org/papers"
+        type: "working_papers"
+
+  - name: "Asian Development Bank (ADB)"
+    short_name: "ADB"
+    category: "International"
+    description: "Regional development bank for Asia, economic and social development"
+    key_reports: ["Asian Development Outlook", "Key Indicators for Asia and the Pacific"]
+    feeds:
+      - "https://www.adb.org/news/rss"
+    scrape_urls:
+      - url: "https://www.adb.org/publications"
+        type: "publications"
+
+  # ============================================================================
+  # CONSULTING FIRMS & PROFESSIONAL SERVICES (8)
+  # ============================================================================
+
+  - name: "McKinsey Global Institute"
+    short_name: "McKinsey"
+    category: "Consulting"
+    description: "Economic research, industry trends, global surveys"
+    key_reports: ["Global Institute Reports", "Industry Insights"]
+    feeds:
+      - "https://www.mckinsey.com/insights/rss"
+    scrape_urls:
+      - url: "https://www.mckinsey.com/mgi/overview"
+        type: "research"
+      - url: "https://www.mckinsey.com/featured-insights"
+        type: "insights"
+
+  - name: "Deloitte Insights"
+    short_name: "Deloitte"
+    category: "Consulting"
+    description: "Economic outlook, industry reports, global predictions"
+    key_reports: ["Global Economic Outlook", "Industry Outlooks", "TMT Predictions"]
+    feeds:
+      - "https://www2.deloitte.com/us/en/insights/rss-feeds/topics/economy.rss.xml"
+    scrape_urls:
+      - url: "https://www2.deloitte.com/us/en/insights/economy.html"
+        type: "economy"
+
+  - name: "BCG Henderson Institute"
+    short_name: "BCG"
+    category: "Consulting"
+    description: "Economic analysis, business strategy research"
+    key_reports: ["BCG Global Manufacturing Cost-Competitiveness Index"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.bcg.com/publications"
+        type: "publications"
+      - url: "https://bcghendersoninstitute.com/research"
+        type: "research"
+
+  - name: "PwC Global"
+    short_name: "PwC"
+    category: "Consulting"
+    description: "CEO surveys, economic outlook, industry insights"
+    key_reports: ["Global CEO Survey", "Global Economic Watch"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.pwc.com/gx/en/issues/economy.html"
+        type: "economy"
+      - url: "https://www.pwc.com/gx/en/ceo-survey.html"
+        type: "ceo_survey"
+
+  - name: "EY Economic Advisory"
+    short_name: "EY"
+    category: "Consulting"
+    description: "Economic analysis, market insights"
+    key_reports: ["EY Global Economic Outlook", "CEO Outlook"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.ey.com/en_gl/insights"
+        type: "insights"
+
+  - name: "KPMG Economics"
+    short_name: "KPMG"
+    category: "Consulting"
+    description: "Economic outlook, sector analysis"
+    key_reports: ["Global Economic Outlook", "Industry Reports"]
+    feeds: []
+    scrape_urls:
+      - url: "https://kpmg.com/xx/en/home/insights.html"
+        type: "insights"
+
+  - name: "Accenture Research"
+    short_name: "Accenture"
+    category: "Consulting"
+    description: "Technology economics, industry trends"
+    key_reports: ["Technology Vision", "Industry Research"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.accenture.com/us-en/insights/research-index"
+        type: "research"
+
+  - name: "Bain & Company Insights"
+    short_name: "Bain"
+    category: "Consulting"
+    description: "Economic perspectives, industry analysis"
+    key_reports: ["Global Private Equity Report", "Industry Briefs"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.bain.com/insights/"
+        type: "insights"
+
+  # ============================================================================
+  # THINK TANKS & RESEARCH INSTITUTES (5)
+  # ============================================================================
+
+  - name: "Brookings Institution"
+    short_name: "Brookings"
+    category: "Think Tank"
+    description: "US & global economic policy, research papers"
+    key_reports: ["Brookings Papers on Economic Activity", "Hamilton Project"]
+    feeds:
+      - "https://www.brookings.edu/feed/"
+    scrape_urls:
+      - url: "https://www.brookings.edu/topic/economic-studies/"
+        type: "economic_studies"
+
+  - name: "Peterson Institute for International Economics (PIIE)"
+    short_name: "PIIE"
+    category: "Think Tank"
+    description: "International economics, trade policy"
+    key_reports: ["PIIE Policy Briefs", "Working Papers"]
+    feeds:
+      - "https://www.piie.com/rss.xml"
+    scrape_urls:
+      - url: "https://www.piie.com/research"
+        type: "research"
+
+  - name: "Bruegel"
+    short_name: "Bruegel"
+    category: "Think Tank"
+    description: "European economy, policy briefs"
+    key_reports: ["Policy Briefs", "Working Papers", "Blog Posts"]
+    feeds:
+      - "https://www.bruegel.org/rss.xml"
+    scrape_urls:
+      - url: "https://www.bruegel.org/publications"
+        type: "publications"
+
+  - name: "Oxford Economics"
+    short_name: "Oxford Economics"
+    category: "Think Tank"
+    description: "Global economic forecasts, country analysis"
+    key_reports: ["Global Economic Model", "Country Reports"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.oxfordeconomics.com/resource-hub/"
+        type: "resource_hub"
+
+  - name: "Capital Economics"
+    short_name: "Capital Economics"
+    category: "Think Tank"
+    description: "Macro forecasts, emerging markets"
+    key_reports: ["Weekly Briefings", "In-Depth Research"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.capitaleconomics.com/publications"
+        type: "publications"
+
+  # ============================================================================
+  # INVESTMENT BANKS RESEARCH (2)
+  # ============================================================================
+
+  - name: "Goldman Sachs Research"
+    short_name: "Goldman Sachs"
+    category: "Investment Bank"
+    description: "Global macro, market commentary"
+    key_reports: ["Global Markets Daily", "Top of Mind"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.goldmansachs.com/insights/"
+        type: "insights"
+
+  - name: "JP Morgan Research"
+    short_name: "JP Morgan"
+    category: "Investment Bank"
+    description: "Economic outlook, market perspectives"
+    key_reports: ["Global Data Watch", "Economic Research"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.jpmorgan.com/insights"
+        type: "insights"
+
+  # ============================================================================
+  # NEWS & DATA PROVIDERS (6)
+  # ============================================================================
+
+  - name: "Bloomberg"
+    short_name: "Bloomberg"
+    category: "News"
+    description: "Real-time financial market intelligence and news"
+    key_reports: []
+    feeds: []
+    scrape_urls:
+      - url: "https://www.bloomberg.com/economics"
+        type: "economics"
+
+  - name: "Reuters"
+    short_name: "Reuters"
+    category: "News"
+    description: "Global newswire, corporate news and macroeconomic data releases"
+    key_reports: []
+    feeds:
+      - "https://www.reutersagency.com/feed/"
+    scrape_urls:
+      - url: "https://www.reuters.com/business/finance/"
+        type: "finance"
+
+  - name: "The Wall Street Journal (WSJ)"
+    short_name: "WSJ"
+    category: "News"
+    description: "US markets, corporate news, and economic policy analysis"
+    key_reports: []
+    feeds:
+      - "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
+    scrape_urls:
+      - url: "https://www.wsj.com/economy"
+        type: "economy"
+
+  - name: "Financial Times (FT)"
+    short_name: "FT"
+    category: "News"
+    description: "International markets, business, and economic policy"
+    key_reports: []
+    feeds:
+      - "https://www.ft.com/rss/home"
+    scrape_urls:
+      - url: "https://www.ft.com/global-economy"
+        type: "global_economy"
+
+  - name: "S&P Global"
+    short_name: "S&P Global"
+    category: "Data Provider"
+    description: "Financial data and credit ratings"
+    key_reports: ["S&P Global Ratings", "Market Intelligence"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.spglobal.com/en/research-insights"
+        type: "research"
+
+  - name: "Economist Intelligence Unit (EIU)"
+    short_name: "EIU"
+    category: "Data Provider"
+    description: "Economic forecasting and country-specific analysis"
+    key_reports: ["Country Reports", "Industry Reports"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.eiu.com/n/"
+        type: "analysis"
+
+  # ============================================================================
+  # CREDIT RATING AGENCIES (3)
+  # ============================================================================
+
+  - name: "Moody's Analytics"
+    short_name: "Moody's"
+    category: "Rating Agency"
+    description: "Financial intelligence, research, and credit ratings"
+    key_reports: ["Economic Outlook", "Credit Outlook"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.moodys.com/newsandevents"
+        type: "news"
+
+  - name: "Fitch Ratings"
+    short_name: "Fitch"
+    category: "Rating Agency"
+    description: "Credit ratings and research"
+    key_reports: ["Fitch Wire", "Rating Actions"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.fitchratings.com/research"
+        type: "research"
+
+  - name: "S&P Global Ratings"
+    short_name: "S&P Ratings"
+    category: "Rating Agency"
+    description: "Credit ratings, rating actions, commentary"
+    key_reports: ["RatingsDirect", "Credit Trends"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.spglobal.com/ratings/en/research-insights/latest-research"
+        type: "research"
+
+  # ============================================================================
+  # INDIA-SPECIFIC SOURCES (4)
+  # ============================================================================
+
+  - name: "Reserve Bank of India (RBI)"
+    short_name: "RBI"
+    category: "India"
+    description: "India's central bank, domestic economic and financial data"
+    key_reports: ["Monetary Policy Report", "Financial Stability Report", "RBI Bulletin"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx"
+        type: "press_releases"
+      - url: "https://www.rbi.org.in/Scripts/PublicationsView.aspx"
+        type: "publications"
+
+  - name: "Ministry of Statistics and Programme Implementation (MoSPI)"
+    short_name: "MoSPI"
+    category: "India"
+    description: "Core Indian government agency for national statistics"
+    key_reports: ["GDP Estimates", "CPI Data", "Statistical Yearbook"]
+    feeds: []
+    scrape_urls:
+      - url: "https://mospi.gov.in/press-release"
+        type: "press_releases"
+
+  - name: "Ministry of Finance, India"
+    short_name: "MoF India"
+    category: "India"
+    description: "National budget, fiscal health, Economic Survey"
+    key_reports: ["Economic Survey", "Union Budget", "Monthly Economic Report"]
+    feeds: []
+    scrape_urls:
+      - url: "https://pib.gov.in/indexd.aspx?mincode=24"
+        type: "press_releases"
+
+  - name: "NITI Aayog"
+    short_name: "NITI Aayog"
+    category: "India"
+    description: "Policy think tank of India, strategic policy input"
+    key_reports: ["India Energy Security Scenarios", "SDG India Index"]
+    feeds: []
+    scrape_urls:
+      - url: "https://www.niti.gov.in/reports"
+        type: "reports"

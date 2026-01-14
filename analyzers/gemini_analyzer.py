@@ -39,9 +39,20 @@ class GeminiAnalyzer:
         self.last_reset = time.time()
         self.min_delay_between_requests = 4  # 4 seconds between API calls
         self.last_request_time = 0
+        
+        # Quota exhaustion detection
+        self.consecutive_quota_errors = 0
+        self.max_consecutive_quota_errors = 5  # After 5 consecutive 429s, assume quota exhausted
+        self.quota_exhausted = False
+        self.successful_requests = 0
+        self.failed_requests = 0
     
     def _check_rate_limit(self):
         """Check and enforce rate limiting with conservative delays."""
+        # If quota is exhausted, skip all API calls
+        if self.quota_exhausted:
+            return False
+        
         # Ensure minimum delay between requests
         time_since_last = time.time() - self.last_request_time
         if time_since_last < self.min_delay_between_requests:
@@ -63,6 +74,53 @@ class GeminiAnalyzer:
         
         self.request_count += 1
         self.last_request_time = time.time()
+        return True
+    
+    def _handle_api_error(self, error: Exception) -> bool:
+        """
+        Handle API errors and detect quota exhaustion.
+        
+        Returns:
+            True if should retry, False if quota exhausted
+        """
+        error_str = str(error).lower()
+        
+        # Check for quota/rate limit errors
+        if '429' in error_str or 'resource_exhausted' in error_str or 'quota' in error_str:
+            self.consecutive_quota_errors += 1
+            self.failed_requests += 1
+            
+            logger.warning(
+                f"Quota error #{self.consecutive_quota_errors}/{self.max_consecutive_quota_errors}: {error}"
+            )
+            
+            # If we hit the threshold, mark quota as exhausted
+            if self.consecutive_quota_errors >= self.max_consecutive_quota_errors:
+                self.quota_exhausted = True
+                logger.error(
+                    f"=== QUOTA EXHAUSTED ===\n"
+                    f"Hit {self.consecutive_quota_errors} consecutive quota errors.\n"
+                    f"Successful requests: {self.successful_requests}\n"
+                    f"Failed requests: {self.failed_requests}\n"
+                    f"Switching to graceful degradation mode - reports will be generated without AI analysis.\n"
+                    f"Quota resets at midnight Pacific Time (~1:30 PM IST)."
+                )
+                return False
+            
+            # For first few errors, wait and retry
+            wait_time = min(30 * self.consecutive_quota_errors, 120)  # Max 2 min wait
+            logger.info(f"Waiting {wait_time}s before retry...")
+            time.sleep(wait_time)
+            return True
+        
+        # Non-quota errors: don't count as quota issues
+        self.failed_requests += 1
+        return False
+    
+    def _mark_success(self):
+        """Mark a successful API call - resets consecutive error counter."""
+        self.consecutive_quota_errors = 0
+        self.successful_requests += 1
     
     def analyze_article(self, article: Article) -> Article:
         """
@@ -74,40 +132,73 @@ class GeminiAnalyzer:
         Returns:
             Article with ai_summary and ai_analysis populated
         """
+        # If quota is exhausted, skip AI and use fallback
+        if self.quota_exhausted:
+            return self._fallback_analysis(article)
+        
         try:
-            self._check_rate_limit()
+            can_proceed = self._check_rate_limit()
+            if not can_proceed:
+                return self._fallback_analysis(article)
             
-            # Generate one-liner summary for Excel
-            article.ai_summary = self._generate_summary(article)
+            # Generate one-liner summary for Excel with retry
+            article.ai_summary = self._safe_generate(
+                lambda: self._generate_summary(article),
+                fallback=article.summary[:150] if article.summary else "Summary not available"
+            )
             
             # Generate detailed analysis for document (only for major items)
-            if self._is_major_item(article):
-                self._check_rate_limit()
-                article.ai_analysis = self._generate_analysis(article)
+            if self._is_major_item(article) and not self.quota_exhausted:
+                can_proceed = self._check_rate_limit()
+                if can_proceed:
+                    article.ai_analysis = self._safe_generate(
+                        lambda: self._generate_analysis(article),
+                        fallback=""
+                    )
             
-            # Categorize the article
+            # Categorize the article (no API call, just keywords)
             article.ai_category = self._categorize(article)
             
-            # Calculate importance score
+            # Calculate importance score (no API call)
             article.importance_score = self._calculate_importance(article)
             article.importance_level = self._get_importance_level(article.importance_score)
             
-            # Assign themes for grouping
+            # Assign themes for grouping (no API call)
             article.themes = self._assign_themes(article)
             
             # Set verification status
-            article.verification_status = "verified" if article.ai_summary else "unverified"
+            article.verification_status = "verified" if article.ai_summary and not self.quota_exhausted else "partial"
             
             logger.debug(f"Analyzed: {article.title[:50]}...")
             
         except Exception as e:
             logger.error(f"Error analyzing article '{article.title[:30]}...': {e}")
-            article.ai_summary = article.summary[:150] if article.summary else "Summary not available"
-            article.ai_analysis = ""
-            article.ai_category = "General"
-            article.importance_score = 3
-            article.importance_level = "Standard"
+            return self._fallback_analysis(article)
         
+        return article
+    
+    def _safe_generate(self, func, fallback, max_retries: int = 2):
+        """Safely call a generation function with retry and fallback."""
+        for attempt in range(max_retries):
+            try:
+                result = func()
+                self._mark_success()
+                return result
+            except Exception as e:
+                should_retry = self._handle_api_error(e)
+                if not should_retry or self.quota_exhausted:
+                    return fallback
+        return fallback
+    
+    def _fallback_analysis(self, article: Article) -> Article:
+        """Provide fallback analysis when quota is exhausted."""
+        article.ai_summary = article.summary[:150] if article.summary else "AI analysis unavailable (quota exhausted)"
+        article.ai_analysis = ""
+        article.ai_category = self._categorize(article)  # Keyword-based, no API
+        article.importance_score = self._calculate_importance(article)  # Rule-based, no API
+        article.importance_level = self._get_importance_level(article.importance_score)
+        article.themes = self._assign_themes(article)  # Keyword-based, no API
+        article.verification_status = "unverified"
         return article
     
     def analyze_batch(self, articles: list[Article], batch_size: int = 10) -> list[Article]:

@@ -293,6 +293,145 @@ Sentiment Analysis:"""
         
         return result or ""
     
+    def generate_cross_source_synthesis(self, articles: list[Article]) -> str:
+        """Generate cross-source synthesis finding common themes."""
+        if self.quota_exhausted or not articles:
+            return ""
+        
+        # Group by source
+        by_source = {}
+        for a in articles[:30]:
+            if a.source not in by_source:
+                by_source[a.source] = []
+            by_source[a.source].append(a.title)
+        
+        source_summary = []
+        for source, titles in list(by_source.items())[:10]:
+            source_summary.append(f"{source}: {', '.join(titles[:3])}")
+        
+        prompt = f"""Analyze these articles from multiple sources and find:
+1. COMMON THEMES across different organizations
+2. CONTRASTING VIEWS where sources disagree
+3. EMERGING CONSENSUS on key issues
+
+Sources and their articles:
+{chr(10).join(source_summary)}
+
+Cross-Source Synthesis:"""
+        
+        messages = [{"role": "user", "content": prompt}]
+        result = self._call_api(messages, max_tokens=500)
+        
+        return result or ""
+    
+    def generate_theme_summary(self, articles: list[Article]) -> dict:
+        """Generate theme-based summary of articles."""
+        if self.quota_exhausted or not articles:
+            return {}
+        
+        # Define themes
+        themes = {
+            "Monetary Policy": [],
+            "Trade & Tariffs": [],
+            "Inflation": [],
+            "Employment": [],
+            "Growth & GDP": [],
+            "Financial Markets": [],
+            "Technology & AI": [],
+            "Energy & Climate": []
+        }
+        
+        # Categorize articles by keyword matching
+        for article in articles:
+            text = f"{article.title} {article.summary or ''}".lower()
+            if any(w in text for w in ['rate', 'fed', 'central bank', 'monetary', 'interest']):
+                themes["Monetary Policy"].append(article.title)
+            if any(w in text for w in ['trade', 'tariff', 'export', 'import', 'wto']):
+                themes["Trade & Tariffs"].append(article.title)
+            if any(w in text for w in ['inflation', 'cpi', 'price', 'deflation']):
+                themes["Inflation"].append(article.title)
+            if any(w in text for w in ['job', 'employment', 'unemployment', 'labor', 'wage']):
+                themes["Employment"].append(article.title)
+            if any(w in text for w in ['gdp', 'growth', 'recession', 'expansion']):
+                themes["Growth & GDP"].append(article.title)
+            if any(w in text for w in ['stock', 'bond', 'equity', 'market', 'investor']):
+                themes["Financial Markets"].append(article.title)
+            if any(w in text for w in ['ai', 'tech', 'digital', 'artificial', 'automation']):
+                themes["Technology & AI"].append(article.title)
+            if any(w in text for w in ['energy', 'oil', 'climate', 'carbon', 'renewable']):
+                themes["Energy & Climate"].append(article.title)
+        
+        # Remove empty themes and limit articles
+        return {k: v[:5] for k, v in themes.items() if v}
+    
+    def generate_actionable_implications(self, articles: list[Article]) -> str:
+        """Generate actionable implications from the articles."""
+        if self.quota_exhausted or not articles:
+            return ""
+        
+        digest = [f"- [{a.source}] {a.title}" for a in articles[:20]]
+        
+        prompt = f"""Based on these economic articles, provide ACTIONABLE IMPLICATIONS for:
+
+Articles:
+{chr(10).join(digest)}
+
+Provide specific, actionable insights for:
+1. INVESTORS: What should they watch/consider?
+2. BUSINESSES: What strategic adjustments to consider?
+3. POLICYMAKERS: What policy responses might be needed?
+4. CONSUMERS: How might this affect household decisions?
+
+Actionable Implications:"""
+        
+        messages = [{"role": "user", "content": prompt}]
+        result = self._call_api(messages, max_tokens=500)
+        
+        return result or ""
+    
+    def generate_geographic_summary(self, articles: list[Article]) -> dict:
+        """Generate geographic breakdown of articles."""
+        if not articles:
+            return {}
+        
+        # Define regions
+        regions = {
+            "United States": ["us", "usa", "america", "fed", "treasury", "washington"],
+            "Europe": ["europe", "eu", "ecb", "eurozone", "uk", "britain", "germany", "france"],
+            "Asia Pacific": ["china", "japan", "india", "asia", "pacific", "asean", "korea"],
+            "Emerging Markets": ["emerging", "brazil", "mexico", "africa", "middle east", "latam"],
+            "Global": ["global", "world", "imf", "worldbank", "wto", "g20", "g7", "oecd"]
+        }
+        
+        result = {}
+        for article in articles:
+            text = f"{article.title} {article.source} {article.summary or ''}".lower()
+            for region, keywords in regions.items():
+                if any(kw in text for kw in keywords):
+                    if region not in result:
+                        result[region] = []
+                    if len(result[region]) < 5:  # Limit per region
+                        result[region].append(article.title)
+        
+        return result
+    
+    def generate_key_numbers_section(self, indicators: dict = None) -> str:
+        """Generate key numbers section (placeholder for FRED data)."""
+        if not indicators:
+            return "Key economic indicators will be updated when data is available."
+        
+        # Format any indicators that were passed
+        lines = ["Key Economic Indicators:"]
+        for name, value in indicators.items():
+            lines.append(f"- {name}: {value}")
+        return "\n".join(lines)
+    
+    def fetch_key_economic_indicators(self) -> dict:
+        """Placeholder for FRED API integration."""
+        # This would normally call FRED API
+        # For now, return empty dict - actual data comes from GeminiAnalyzer
+        return {}
+    
     def get_status(self) -> dict:
         """Get current analyzer status."""
         return {
@@ -304,3 +443,4 @@ Sentiment Analysis:"""
             "models_tried": self.current_model_index + 1,
             "models_available": len(self.FREE_MODELS)
         }
+

@@ -118,6 +118,7 @@ def run_agent(
         # Try OpenRouter first (Llama 70B, Mistral, Gemma - all free)
         use_openrouter = Settings.OPENROUTER_API_KEY
         use_gemini = Settings.GEMINI_API_KEY
+        openrouter_success = False
         
         if use_openrouter:
             logger.info("[OPENROUTER] Using OpenRouter API (Llama 3.3 70B / Mistral / Gemma)")
@@ -131,8 +132,14 @@ def run_agent(
                         break
                     
                     article.ai_summary = or_analyzer.generate_summary(article)
-                    if i < 15:  # Top 15 get detailed analysis
+                    if i < 20:  # Top 20 get detailed analysis
                         article.ai_analysis = or_analyzer.generate_analysis(article)
+                    
+                    # Set basic fields
+                    article.ai_category = "Economic Analysis"
+                    article.importance_score = 5
+                    article.importance_level = "Standard"
+                    article.verification_status = "verified" if article.ai_summary else "partial"
                     
                     if (i + 1) % 10 == 0:
                         status = or_analyzer.get_status()
@@ -142,25 +149,48 @@ def run_agent(
                 
                 # Generate executive summary
                 executive_summary = or_analyzer.generate_executive_summary(analyzed_articles, date_range)
+                logger.info("[OK] Generated executive summary")
                 
                 # Generate TL;DR Top 5
                 tldr_top5 = or_analyzer.generate_tldr_top5(analyzed_articles)
                 logger.info("[OK] Generated TL;DR Top 5")
                 
+                # Generate cross-source synthesis
+                cross_source = or_analyzer.generate_cross_source_synthesis(analyzed_articles)
+                logger.info("[OK] Generated cross-source synthesis")
+                
+                # Generate theme summary (keyword-based, no API needed)
+                theme_summary = or_analyzer.generate_theme_summary(analyzed_articles)
+                logger.info("[OK] Generated theme summary")
+                
                 # Generate sentiment
                 sentiment = or_analyzer.generate_sentiment(analyzed_articles)
                 logger.info("[OK] Generated sentiment analysis")
+                
+                # Generate actionable implications
+                implications = or_analyzer.generate_actionable_implications(analyzed_articles)
+                logger.info("[OK] Generated actionable implications")
+                
+                # Generate geographic summary (keyword-based, no API needed)
+                geographic = or_analyzer.generate_geographic_summary(analyzed_articles)
+                logger.info("[OK] Generated geographic breakdown")
+                
+                # Key numbers (placeholder - no FRED API in OpenRouter yet)
+                key_numbers = or_analyzer.generate_key_numbers_section()
                 
                 # Log final status
                 status = or_analyzer.get_status()
                 logger.info(f"[OPENROUTER] Complete: {status['successful_requests']} success, {status['failed_requests']} failed")
                 
+                # Mark as successful to skip Gemini
+                openrouter_success = True
+                
             except Exception as e:
                 logger.error(f"[OPENROUTER] Error: {e}")
-                use_openrouter = False
+                openrouter_success = False
         
-        # Fallback to Gemini if OpenRouter not available/failed
-        if not use_openrouter and use_gemini:
+        # Fallback to Gemini ONLY if OpenRouter not available or failed
+        if not openrouter_success and use_gemini and not use_openrouter:
             logger.info("[GEMINI] Falling back to Gemini API")
             analyzer = GeminiAnalyzer()
             

@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config.settings import Settings
 from collectors.collector_manager import CollectorManager
 from analyzers.gemini_analyzer import GeminiAnalyzer
+from analyzers.openrouter_analyzer import OpenRouterAnalyzer
 from generators.document_generator import DocumentGenerator
 from generators.excel_generator import ExcelGenerator
 from delivery.email_sender import EmailSender
@@ -103,8 +104,8 @@ def run_agent(
         
         logger.info(f"[OK] Collected {len(all_articles)} articles from {len(articles_by_org)} organizations")
         
-        # Step 2: Analyze with Gemini
-        logger.info("\n[STEP 2] Analyzing content with Gemini AI...")
+        # Step 2: Analyze with AI (OpenRouter primary, Gemini fallback)
+        logger.info("\n[STEP 2] Analyzing content with AI...")
         
         tldr_top5 = ""
         cross_source = ""
@@ -114,10 +115,56 @@ def run_agent(
         geographic = {}
         key_numbers = ""
         
-        if Settings.GEMINI_API_KEY:
+        # Try OpenRouter first (Llama 70B, Mistral, Gemma - all free)
+        use_openrouter = Settings.OPENROUTER_API_KEY
+        use_gemini = Settings.GEMINI_API_KEY
+        
+        if use_openrouter:
+            logger.info("[OPENROUTER] Using OpenRouter API (Llama 3.3 70B / Mistral / Gemma)")
+            try:
+                or_analyzer = OpenRouterAnalyzer()
+                
+                # Analyze articles with OpenRouter
+                for i, article in enumerate(all_articles):
+                    if or_analyzer.quota_exhausted:
+                        logger.warning(f"[OPENROUTER] Quota exhausted after {i} articles")
+                        break
+                    
+                    article.ai_summary = or_analyzer.generate_summary(article)
+                    if i < 15:  # Top 15 get detailed analysis
+                        article.ai_analysis = or_analyzer.generate_analysis(article)
+                    
+                    if (i + 1) % 10 == 0:
+                        status = or_analyzer.get_status()
+                        logger.info(f"[OPENROUTER] Processed {i+1}/{len(all_articles)} with {status['current_model']}")
+                
+                analyzed_articles = all_articles
+                
+                # Generate executive summary
+                executive_summary = or_analyzer.generate_executive_summary(analyzed_articles, date_range)
+                
+                # Generate TL;DR Top 5
+                tldr_top5 = or_analyzer.generate_tldr_top5(analyzed_articles)
+                logger.info("[OK] Generated TL;DR Top 5")
+                
+                # Generate sentiment
+                sentiment = or_analyzer.generate_sentiment(analyzed_articles)
+                logger.info("[OK] Generated sentiment analysis")
+                
+                # Log final status
+                status = or_analyzer.get_status()
+                logger.info(f"[OPENROUTER] Complete: {status['successful_requests']} success, {status['failed_requests']} failed")
+                
+            except Exception as e:
+                logger.error(f"[OPENROUTER] Error: {e}")
+                use_openrouter = False
+        
+        # Fallback to Gemini if OpenRouter not available/failed
+        if not use_openrouter and use_gemini:
+            logger.info("[GEMINI] Falling back to Gemini API")
             analyzer = GeminiAnalyzer()
             
-            # Fetch key economic indicators first (no AI needed)
+            # Fetch key economic indicators (FRED API - no AI)
             logger.info("Fetching key economic indicators...")
             indicators = analyzer.fetch_key_economic_indicators()
             key_numbers = analyzer.generate_key_numbers_section(indicators)
@@ -126,43 +173,28 @@ def run_agent(
             # Analyze articles
             analyzed_articles = analyzer.analyze_batch(all_articles)
             
-            # Generate executive summary
+            # Generate summaries
             executive_summary = analyzer.generate_executive_summary(analyzed_articles, date_range)
-            
-            # Generate TL;DR Top 5
             tldr_top5 = analyzer.generate_top5_tldr(analyzed_articles)
-            logger.info("[OK] Generated TL;DR Top 5")
-            
-            # Generate cross-source synthesis
             cross_source = analyzer.generate_cross_source_synthesis(analyzed_articles)
-            logger.info("[OK] Generated cross-source synthesis")
-            
-            # Generate theme summary
             theme_summary = analyzer.generate_theme_summary(analyzed_articles)
-            
-            # Generate sentiment analysis
             sentiment = analyzer.generate_sentiment_analysis(analyzed_articles)
-            logger.info("[OK] Generated sentiment analysis")
-            
-            # Generate actionable implications
             implications = analyzer.generate_actionable_implications(analyzed_articles)
-            logger.info("[OK] Generated actionable implications")
-            
-            # Generate geographic summary
             geographic = analyzer.generate_geographic_summary(analyzed_articles)
-            logger.info("[OK] Generated geographic breakdown")
-            
-            # Update articles_by_org with analyzed versions
-            for org_name in articles_by_org:
-                articles_by_org[org_name] = [
-                    a for a in analyzed_articles if a.source == org_name
-                ]
             
             logger.info("[OK] AI analysis complete")
-        else:
-            logger.warning("[WARNING] GEMINI_API_KEY not set - skipping AI analysis")
+        
+        # No API available
+        if not use_openrouter and not use_gemini:
+            logger.warning("[WARNING] No API keys set - skipping AI analysis")
             analyzed_articles = all_articles
             executive_summary = f"Weekly economic intelligence covering {len(all_articles)} articles from {len(articles_by_org)} organizations."
+        
+        # Update articles_by_org with analyzed versions
+        for org_name in articles_by_org:
+            articles_by_org[org_name] = [
+                a for a in analyzed_articles if a.source == org_name
+            ]
         
         # Step 3: Generate reports
         logger.info("\n[STEP 3] Generating reports...")

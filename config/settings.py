@@ -18,6 +18,7 @@ class Settings:
     
     # API Keys
     GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')
+    OPENROUTER_API_KEY: str = os.getenv('OPENROUTER_API_KEY', '')
     
     # Email Configuration
     EMAIL_ADDRESS: str = os.getenv('EMAIL_ADDRESS', '')

@@ -37,9 +37,12 @@ class Article:
     importance_score: int = 0  # 1-10 importance rating
     importance_level: str = ""  # "Critical", "Important", "Standard"
     themes: list[str] = field(default_factory=list)  # Theme tags for grouping
-    verification_status: str = "unverified"  # "verified", "unverified", "needs_review"
+    verification_status: str = "unverified"  # "verified", "unverified", "deep_verified"
     has_pdf: bool = False  # Whether source has a PDF to extract
     pdf_url: str = ""  # URL to the PDF if available
+    
+    # Deep PDF analysis results
+    deep_analysis: dict = field(default_factory=dict)  # Charts, tables, statistics from PDF
     
     def __post_init__(self):
         """Validate and normalize data."""

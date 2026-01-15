@@ -11,8 +11,10 @@ google-generativeai>=0.8.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 
-# PDF extraction
+# PDF extraction and analysis
 pymupdf>=1.24.0
+pdfplumber>=0.10.0
+Pillow>=10.0.0
 
 # Email
 # (uses built-in smtplib)

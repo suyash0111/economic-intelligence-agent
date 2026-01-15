@@ -316,12 +316,64 @@ class DocumentGenerator:
             date_run.font.size = Pt(9)
             date_run.font.color.rgb = RGBColor(102, 102, 102)
         
+        # Deep analysis badge
+        if article.verification_status == "deep_verified" and article.deep_analysis:
+            badge_run = p.add_run("  📄 Full Report Analyzed")
+            badge_run.font.size = Pt(8)
+            badge_run.font.color.rgb = RGBColor(0, 128, 0)
+            badge_run.italic = True
+        
         # AI Summary (one-liner)
         if article.ai_summary:
             summary_p = self.doc.add_paragraph()
             summary_p.add_run(article.ai_summary)
             summary_p.runs[0].font.size = Pt(10)
             summary_p.paragraph_format.left_indent = Inches(0.25)
+        
+        # ============================================================
+        # DEEP ANALYSIS SECTIONS (for reports that were deeply analyzed)
+        # ============================================================
+        if article.deep_analysis and article.deep_analysis.get('success'):
+            deep = article.deep_analysis
+            
+            # Key Statistics Extracted
+            if deep.get('key_statistics'):
+                stats_p = self.doc.add_paragraph()
+                stats_header = stats_p.add_run("📊 KEY STATISTICS EXTRACTED:\n")
+                stats_header.bold = True
+                stats_header.font.size = Pt(10)
+                stats_header.font.color.rgb = RGBColor(0, 51, 102)
+                
+                for stat in deep['key_statistics'][:8]:  # Limit to 8
+                    stats_p.add_run(f"• {stat}\n")
+                stats_p.paragraph_format.left_indent = Inches(0.25)
+            
+            # Chart Descriptions
+            if deep.get('chart_descriptions'):
+                charts_p = self.doc.add_paragraph()
+                charts_header = charts_p.add_run("📈 CHARTS ANALYZED:\n")
+                charts_header.bold = True
+                charts_header.font.size = Pt(10)
+                charts_header.font.color.rgb = RGBColor(0, 51, 102)
+                
+                for i, desc in enumerate(deep['chart_descriptions'][:3], 1):
+                    chart_run = charts_p.add_run(f"[Chart {i}] ")
+                    chart_run.bold = True
+                    charts_p.add_run(f"{desc}\n\n")
+                charts_p.paragraph_format.left_indent = Inches(0.25)
+            
+            # Table Summaries
+            if deep.get('table_summaries'):
+                tables_p = self.doc.add_paragraph()
+                tables_header = tables_p.add_run("📋 KEY TABLES:\n")
+                tables_header.bold = True
+                tables_header.font.size = Pt(10)
+                tables_header.font.color.rgb = RGBColor(0, 51, 102)
+                
+                for table_md in deep['table_summaries'][:3]:  # Limit to 3 tables
+                    # Simplified table display (full markdown tables don't render in Word)
+                    tables_p.add_run(f"{table_md[:300]}...\n\n")
+                tables_p.paragraph_format.left_indent = Inches(0.25)
         
         # AI Analysis (detailed - only for major items)
         if article.ai_analysis:

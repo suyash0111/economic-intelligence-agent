@@ -845,4 +845,231 @@ CRITICAL RULES:
             lines.append(f"\n_{indicators['NOTES']}_")
         
         return "\n".join(lines)
+    
+    # =========================================================================
+    # DEEP PDF ANALYSIS METHODS
+    # =========================================================================
+    
+    def deep_analyze_report(self, extracted_content, article) -> dict:
+        """
+        Perform deep analysis on extracted PDF content.
+        
+        Args:
+            extracted_content: ExtractedContent from PDFProcessor
+            article: Original Article object
+            
+        Returns:
+            Dictionary with comprehensive analysis results
+        """
+        from analyzers.pdf_processor import extract_key_statistics
+        
+        result = {
+            'success': False,
+            'summary': '',
+            'detailed_analysis': '',
+            'key_statistics': [],
+            'chart_descriptions': [],
+            'table_summaries': [],
+            'key_quotes': [],
+            'page_count': extracted_content.page_count
+        }
+        
+        if not extracted_content.extraction_success:
+            logger.warning(f"Cannot deep analyze - extraction failed: {extracted_content.error_message}")
+            return result
+        
+        try:
+            # 1. Extract key statistics from text
+            result['key_statistics'] = extract_key_statistics(extracted_content.full_text)
+            
+            # 2. Summarize text chunks
+            chunk_summaries = []
+            for i, chunk in enumerate(extracted_content.text_chunks[:5]):  # Limit to 5 chunks
+                if self.quota_exhausted:
+                    break
+                summary = self._summarize_chunk(chunk, i + 1, len(extracted_content.text_chunks))
+                if summary:
+                    chunk_summaries.append(summary)
+            
+            # 3. Synthesize chunk summaries into comprehensive analysis
+            if chunk_summaries and not self.quota_exhausted:
+                result['detailed_analysis'] = self._synthesize_analysis(
+                    chunk_summaries, 
+                    article,
+                    result['key_statistics']
+                )
+            
+            # 4. Analyze charts/images (using Gemini Vision)
+            for i, image_bytes in enumerate(extracted_content.images[:3]):  # Limit to 3 images
+                if self.quota_exhausted:
+                    break
+                description = self._analyze_chart_image(image_bytes, article.title)
+                if description:
+                    result['chart_descriptions'].append(description)
+            
+            # 5. Summarize tables
+            for table in extracted_content.tables[:5]:  # Limit to 5 tables
+                table_summary = f"**Table (Page {table['page']}):**\n{table['markdown'][:500]}"
+                result['table_summaries'].append(table_summary)
+            
+            # 6. Generate one-liner summary
+            if result['detailed_analysis']:
+                result['summary'] = self._generate_deep_summary(result['detailed_analysis'], article)
+            
+            result['success'] = True
+            logger.info(f"Deep analysis complete: {len(chunk_summaries)} chunks, {len(result['chart_descriptions'])} charts")
+            
+        except Exception as e:
+            logger.error(f"Deep analysis failed: {e}")
+            result['success'] = False
+        
+        return result
+    
+    def _summarize_chunk(self, chunk: str, chunk_num: int, total_chunks: int) -> str:
+        """Summarize a single text chunk."""
+        if self.quota_exhausted:
+            return ""
+        
+        can_proceed = self._check_rate_limit()
+        if not can_proceed:
+            return ""
+        
+        prompt = f"""Summarize this section (part {chunk_num}/{total_chunks}) of an economic report.
+Focus on:
+- Key findings and data points
+- Policy implications
+- Market-moving information
 
+TEXT:
+{chunk[:6000]}
+
+Provide a concise summary (100-150 words):"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            self._mark_success()
+            return response.text.strip()
+        except Exception as e:
+            self._handle_api_error(e)
+            return ""
+    
+    def _synthesize_analysis(self, chunk_summaries: list, article, statistics: list) -> str:
+        """Synthesize chunk summaries into comprehensive analysis."""
+        if self.quota_exhausted or not chunk_summaries:
+            return ""
+        
+        can_proceed = self._check_rate_limit()
+        if not can_proceed:
+            return ""
+        
+        summaries_text = "\n\n".join([f"Section {i+1}: {s}" for i, s in enumerate(chunk_summaries)])
+        stats_text = "\n".join([f"• {s}" for s in statistics[:10]]) if statistics else "No specific statistics extracted."
+        
+        prompt = f"""You are writing the analysis for "The Global Pulse" Weekly Economic Intelligence Report.
+
+REPORT BEING ANALYZED:
+Title: {article.title}
+Source: {article.source_full}
+Category: {article.category}
+
+SECTION SUMMARIES FROM THE REPORT:
+{summaries_text}
+
+KEY STATISTICS FOUND:
+{stats_text}
+
+Write a comprehensive "Major Findings & Analysis" section following this structure:
+
+**1. THE NON-OBVIOUS TRUTHS**
+What does this report reveal that a headline reader would miss? Extract the deeper insights, 
+counterintuitive findings, or hidden patterns.
+
+**2. MACRO & MICRO INDICATORS**
+- Macroeconomic: GDP, inflation, employment, trade implications
+- Microeconomic: Industry-specific, business, consumer impacts
+
+**3. POLICY IMPLICATIONS**
+What does this mean for governments, central banks, and regulators?
+
+**4. WHY THIS MATTERS TO YOU**
+Explain in plain terms with analogies. What should investors, businesses, and individuals 
+understand from this?
+
+RULES:
+- Use specific numbers and statistics from the report
+- If data is not available, say "The full report contains detailed data"
+- Keep total length under 500 words
+- Use bullet points for readability"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            self._mark_success()
+            return response.text.strip()
+        except Exception as e:
+            self._handle_api_error(e)
+            return ""
+    
+    def _analyze_chart_image(self, image_bytes: bytes, report_title: str) -> str:
+        """Analyze a chart/graph image using Gemini Vision."""
+        if self.quota_exhausted:
+            return ""
+        
+        can_proceed = self._check_rate_limit()
+        if not can_proceed:
+            return ""
+        
+        try:
+            from PIL import Image
+            from io import BytesIO
+            
+            # Load image
+            img = Image.open(BytesIO(image_bytes))
+            
+            # Resize if too large (Gemini has limits)
+            max_size = 1024
+            if max(img.size) > max_size:
+                ratio = max_size / max(img.size)
+                new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+            
+            prompt = f"""This is a chart/graph from an economic report titled "{report_title}".
+
+Describe this chart in 2-3 sentences:
+1. What type of chart is it? (bar, line, pie, etc.)
+2. What data does it show?
+3. What is the key takeaway or trend visible?
+
+Be specific about any numbers, percentages, or trends you can identify."""
+
+            response = self.model.generate_content([prompt, img])
+            self._mark_success()
+            return response.text.strip()
+            
+        except Exception as e:
+            logger.warning(f"Chart analysis failed: {e}")
+            self._handle_api_error(e)
+            return ""
+    
+    def _generate_deep_summary(self, detailed_analysis: str, article) -> str:
+        """Generate a one-liner summary from the detailed analysis."""
+        if self.quota_exhausted:
+            return article.summary[:150] if article.summary else "Summary unavailable"
+        
+        can_proceed = self._check_rate_limit()
+        if not can_proceed:
+            return article.summary[:150] if article.summary else "Summary unavailable"
+        
+        prompt = f"""Based on this analysis of "{article.title}" from {article.source}:
+
+{detailed_analysis[:2000]}
+
+Write a single-sentence summary (max 150 characters) capturing the most important finding:"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            self._mark_success()
+            summary = response.text.strip()
+            return summary[:200]
+        except Exception as e:
+            self._handle_api_error(e)
+            return article.summary[:150] if article.summary else "Summary unavailable"

@@ -142,6 +142,61 @@ def run_agent(
                 else:
                     logger.info(f"[GEMINI] Article analysis complete: {analyzer.successful_requests} successful")
                 
+                # ============================================================
+                # DEEP PDF ANALYSIS FOR MAJOR REPORTS
+                # ============================================================
+                if not analyzer.quota_exhausted:
+                    from analyzers.pdf_processor import PDFProcessor
+                    
+                    pdf_processor = PDFProcessor()
+                    deep_analyzed_count = 0
+                    
+                    # Find articles that warrant deep analysis
+                    major_articles = [a for a in analyzed_articles if pdf_processor.should_deep_analyze(a)]
+                    logger.info(f"[DEEP ANALYSIS] Found {len(major_articles)} major reports for deep PDF analysis")
+                    
+                    for i, article in enumerate(major_articles):
+                        if analyzer.quota_exhausted:
+                            logger.warning(f"[DEEP ANALYSIS] Stopping - quota exhausted after {deep_analyzed_count} reports")
+                            break
+                        
+                        # Try to download and analyze the PDF
+                        pdf_path = pdf_processor.download_pdf(article.url)
+                        
+                        if pdf_path:
+                            logger.info(f"[DEEP ANALYSIS] Processing {i+1}/{len(major_articles)}: {article.title[:50]}...")
+                            
+                            # Extract content from PDF
+                            extracted = pdf_processor.extract_content(pdf_path)
+                            
+                            if extracted.extraction_success:
+                                # Perform deep analysis
+                                deep_result = analyzer.deep_analyze_report(extracted, article)
+                                
+                                if deep_result['success']:
+                                    # Update article with deep analysis
+                                    article.ai_summary = deep_result['summary'] or article.ai_summary
+                                    article.ai_analysis = deep_result['detailed_analysis'] or article.ai_analysis
+                                    
+                                    # Store additional deep analysis data
+                                    article.deep_analysis = deep_result
+                                    article.verification_status = "deep_verified"
+                                    deep_analyzed_count += 1
+                                    
+                                    logger.info(f"[DEEP ANALYSIS] Complete: {extracted.page_count} pages, "
+                                              f"{len(deep_result['chart_descriptions'])} charts, "
+                                              f"{len(deep_result['table_summaries'])} tables")
+                        
+                        # Progress update every 10 reports
+                        if (i + 1) % 10 == 0:
+                            logger.info(f"[DEEP ANALYSIS] Progress: {i+1}/{len(major_articles)}")
+                    
+                    # Cleanup downloaded PDFs
+                    pdf_processor.cleanup()
+                    stats = pdf_processor.get_stats()
+                    logger.info(f"[DEEP ANALYSIS] Complete: {deep_analyzed_count} reports deep-analyzed, "
+                              f"{stats['downloaded']} downloaded, {stats['skipped']} skipped")
+                
                 # Generate executive summary
                 executive_summary = analyzer.generate_executive_summary(analyzed_articles, date_range)
                 logger.info("[OK] Generated executive summary")

@@ -28,11 +28,13 @@ class GeminiAnalyzer:
         
         genai.configure(api_key=Settings.GEMINI_API_KEY)
         
-        # Use Gemini 2.0 Flash for fast, cost-effective processing
-        self.model = genai.GenerativeModel('gemini-2.0-flash')
+        # Use Gemini 2.5 Flash Lite for higher free tier limits
+        # Free tier: gemini-2.5-flash = 250 RPD, gemini-2.5-flash-lite = 1000 RPD
+        # We need ~750 calls for deep analysis, so lite model is required
+        self.model = genai.GenerativeModel('gemini-2.5-flash-lite-preview-06-17')
         
         # Rate limiting - conservative for free tier
-        # Free tier: 15 requests/minute, 1500/day
+        # Free tier: 30 requests/minute, 1000/day for gemini-2.5-flash-lite
         # We use 10/minute to be safe and avoid hitting limits
         self.requests_per_minute = 10
         self.request_count = 0

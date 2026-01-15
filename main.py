@@ -28,7 +28,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config.settings import Settings
 from collectors.collector_manager import CollectorManager
 from analyzers.gemini_analyzer import GeminiAnalyzer
-from analyzers.openrouter_analyzer import OpenRouterAnalyzer
 from generators.document_generator import DocumentGenerator
 from generators.excel_generator import ExcelGenerator
 from delivery.email_sender import EmailSender
@@ -104,8 +103,8 @@ def run_agent(
         
         logger.info(f"[OK] Collected {len(all_articles)} articles from {len(articles_by_org)} organizations")
         
-        # Step 2: Analyze with AI (OpenRouter primary, Gemini fallback)
-        logger.info("\n[STEP 2] Analyzing content with AI...")
+        # Step 2: Analyze with AI (Gemini 2.0 Flash)
+        logger.info("\n[STEP 2] Analyzing content with Gemini AI...")
         
         tldr_top5 = ""
         cross_source = ""
@@ -114,111 +113,75 @@ def run_agent(
         implications = ""
         geographic = {}
         key_numbers = ""
+        executive_summary = ""
+        analyzed_articles = all_articles
         
-        # Try OpenRouter first (Llama 70B, Mistral, Gemma - all free)
-        use_openrouter = Settings.OPENROUTER_API_KEY
-        use_gemini = Settings.GEMINI_API_KEY
-        openrouter_success = False
-        
-        if use_openrouter:
-            logger.info("[OPENROUTER] Using OpenRouter API (Llama 3.3 70B / Mistral / Gemma)")
+        # Check for Gemini API key
+        if not Settings.GEMINI_API_KEY:
+            logger.warning("[WARNING] GEMINI_API_KEY not set - skipping AI analysis")
+            executive_summary = f"Weekly economic intelligence covering {len(all_articles)} articles from {len(articles_by_org)} organizations."
+        else:
+            logger.info("[GEMINI] Using Gemini 2.0 Flash API (Rate limited: 10 RPM, 4s delay)")
             try:
-                or_analyzer = OpenRouterAnalyzer()
+                analyzer = GeminiAnalyzer()
                 
-                # Analyze articles with OpenRouter
-                for i, article in enumerate(all_articles):
-                    if or_analyzer.quota_exhausted:
-                        logger.warning(f"[OPENROUTER] Quota exhausted after {i} articles")
-                        break
-                    
-                    article.ai_summary = or_analyzer.generate_summary(article)
-                    if i < 20:  # Top 20 get detailed analysis
-                        article.ai_analysis = or_analyzer.generate_analysis(article)
-                    
-                    # Set basic fields
-                    article.ai_category = "Economic Analysis"
-                    article.importance_score = 5
-                    article.importance_level = "Standard"
-                    article.verification_status = "verified" if article.ai_summary else "partial"
-                    
-                    if (i + 1) % 10 == 0:
-                        status = or_analyzer.get_status()
-                        logger.info(f"[OPENROUTER] Processed {i+1}/{len(all_articles)} with {status['current_model']}")
+                # Fetch key economic indicators (FRED API - no AI needed)
+                logger.info("[GEMINI] Fetching key economic indicators...")
+                indicators = analyzer.fetch_key_economic_indicators()
+                key_numbers = analyzer.generate_key_numbers_section(indicators)
+                logger.info("[OK] Fetched economic indicators")
                 
-                analyzed_articles = all_articles
+                # Analyze articles with proper rate limiting
+                logger.info(f"[GEMINI] Analyzing {len(all_articles)} articles...")
+                analyzed_articles = analyzer.analyze_batch(all_articles)
+                
+                # Check status after article analysis
+                if analyzer.quota_exhausted:
+                    logger.warning("[GEMINI] Quota exhausted during article analysis")
+                    logger.info(f"[GEMINI] Successful: {analyzer.successful_requests}, Failed: {analyzer.failed_requests}")
+                else:
+                    logger.info(f"[GEMINI] Article analysis complete: {analyzer.successful_requests} successful")
                 
                 # Generate executive summary
-                executive_summary = or_analyzer.generate_executive_summary(analyzed_articles, date_range)
+                executive_summary = analyzer.generate_executive_summary(analyzed_articles, date_range)
                 logger.info("[OK] Generated executive summary")
                 
                 # Generate TL;DR Top 5
-                tldr_top5 = or_analyzer.generate_tldr_top5(analyzed_articles)
+                tldr_top5 = analyzer.generate_top5_tldr(analyzed_articles)
                 logger.info("[OK] Generated TL;DR Top 5")
                 
                 # Generate cross-source synthesis
-                cross_source = or_analyzer.generate_cross_source_synthesis(analyzed_articles)
+                cross_source = analyzer.generate_cross_source_synthesis(analyzed_articles)
                 logger.info("[OK] Generated cross-source synthesis")
                 
-                # Generate theme summary (keyword-based, no API needed)
-                theme_summary = or_analyzer.generate_theme_summary(analyzed_articles)
+                # Generate theme summary (keyword-based, minimal API)
+                theme_summary = analyzer.generate_theme_summary(analyzed_articles)
                 logger.info("[OK] Generated theme summary")
                 
-                # Generate sentiment
-                sentiment = or_analyzer.generate_sentiment(analyzed_articles)
+                # Generate sentiment analysis
+                sentiment = analyzer.generate_sentiment_analysis(analyzed_articles)
                 logger.info("[OK] Generated sentiment analysis")
                 
                 # Generate actionable implications
-                implications = or_analyzer.generate_actionable_implications(analyzed_articles)
+                implications = analyzer.generate_actionable_implications(analyzed_articles)
                 logger.info("[OK] Generated actionable implications")
                 
-                # Generate geographic summary (keyword-based, no API needed)
-                geographic = or_analyzer.generate_geographic_summary(analyzed_articles)
+                # Generate geographic summary (keyword-based, no API)
+                geographic = analyzer.generate_geographic_summary(analyzed_articles)
                 logger.info("[OK] Generated geographic breakdown")
                 
-                # Key numbers (placeholder - no FRED API in OpenRouter yet)
-                key_numbers = or_analyzer.generate_key_numbers_section()
+                # Final status
+                logger.info(f"[GEMINI] Complete: {analyzer.successful_requests} success, {analyzer.failed_requests} failed")
                 
-                # Log final status
-                status = or_analyzer.get_status()
-                logger.info(f"[OPENROUTER] Complete: {status['successful_requests']} success, {status['failed_requests']} failed")
-                
-                # Mark as successful to skip Gemini
-                openrouter_success = True
+                if analyzer.quota_exhausted:
+                    logger.warning("[GEMINI] Some analysis may be partial due to quota limits")
                 
             except Exception as e:
-                logger.error(f"[OPENROUTER] Error: {e}")
-                openrouter_success = False
-        
-        # Fallback to Gemini ONLY if OpenRouter not available or failed
-        if not openrouter_success and use_gemini and not use_openrouter:
-            logger.info("[GEMINI] Falling back to Gemini API")
-            analyzer = GeminiAnalyzer()
-            
-            # Fetch key economic indicators (FRED API - no AI)
-            logger.info("Fetching key economic indicators...")
-            indicators = analyzer.fetch_key_economic_indicators()
-            key_numbers = analyzer.generate_key_numbers_section(indicators)
-            logger.info("[OK] Fetched economic indicators")
-            
-            # Analyze articles
-            analyzed_articles = analyzer.analyze_batch(all_articles)
-            
-            # Generate summaries
-            executive_summary = analyzer.generate_executive_summary(analyzed_articles, date_range)
-            tldr_top5 = analyzer.generate_top5_tldr(analyzed_articles)
-            cross_source = analyzer.generate_cross_source_synthesis(analyzed_articles)
-            theme_summary = analyzer.generate_theme_summary(analyzed_articles)
-            sentiment = analyzer.generate_sentiment_analysis(analyzed_articles)
-            implications = analyzer.generate_actionable_implications(analyzed_articles)
-            geographic = analyzer.generate_geographic_summary(analyzed_articles)
-            
-            logger.info("[OK] AI analysis complete")
-        
-        # No API available
-        if not use_openrouter and not use_gemini:
-            logger.warning("[WARNING] No API keys set - skipping AI analysis")
-            analyzed_articles = all_articles
-            executive_summary = f"Weekly economic intelligence covering {len(all_articles)} articles from {len(articles_by_org)} organizations."
+                logger.error(f"[GEMINI] Error during analysis: {e}")
+                import traceback
+                traceback.print_exc()
+                # Provide fallback content
+                executive_summary = f"Weekly economic intelligence covering {len(all_articles)} articles from {len(articles_by_org)} organizations."
         
         # Update articles_by_org with analyzed versions
         for org_name in articles_by_org:

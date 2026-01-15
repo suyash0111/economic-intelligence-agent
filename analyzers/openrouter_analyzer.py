@@ -179,7 +179,7 @@ class OpenRouterAnalyzer:
 
 Title: {article.title}
 Source: {article.source}
-Content: {article.summary or article.content[:500]}
+Content: {article.summary or article.content_preview[:500] if article.content_preview else 'No content available'}
 
 One-sentence summary:"""
         
@@ -202,7 +202,7 @@ One-sentence summary:"""
 
 Title: {article.title}
 Source: {article.source}
-Content: {article.summary or article.content[:1000]}
+Content: {article.summary or article.content_preview[:1000] if article.content_preview else 'No content available'}
 
 Analysis:"""
         

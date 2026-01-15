@@ -1,24 +1,37 @@
 # The Global Pulse 📊
 ## Weekly Economic Intelligence Agent
 
-An automated agent that monitors **44 leading economic and financial organizations** weekly, analyzes their publications using AI, and delivers comprehensive intelligence reports via email.
+An automated agent that monitors **44 leading economic and financial organizations** weekly, performs **deep PDF analysis** using AI, and delivers comprehensive intelligence reports via email.
+
+---
 
 ## 🌟 Features
 
+### Core Capabilities
 - **Comprehensive Coverage**: Monitors 44 organizations including Fed, ECB, IMF, World Bank, RBI, McKinsey, and more
-- **AI-Powered Analysis**: Uses Google's Gemini AI for 360-degree analysis with Professional-Layman tone
+- **AI-Powered Analysis**: Uses Google's Gemini 2.0 Flash AI for 360-degree analysis
 - **Multiple Output Formats**:
-  - 📄 **Word Document**: "The Global Pulse" - comprehensive agency-wise report
-  - 📊 **Excel Spreadsheet**: "Master Intelligence Index" - quick reference
-- **Advanced Features**:
-  - 🎯 **TL;DR Top 5**: Critical developments ranked by importance
-  - 📈 **Market Sentiment**: Bullish/Neutral/Bearish indicator
-  - 💼 **Actionable Implications**: For investors, businesses, policymakers
-  - 🌍 **Regional Breakdown**: Global, Americas, Europe, Asia-Pacific, India
-  - 📊 **Key Economic Numbers**: Live data from FRED API
-  - 🔄 **Cross-Source Synthesis**: Consensus vs divergent views
-  - 📑 **PDF Extraction**: Extract content from PDF reports
-- **Automated Delivery**: Weekly email with mobile-friendly HTML digest
+  - 📄 **Word Document**: "The Global Pulse" - comprehensive agency-wise report (40-60 pages)
+  - 📊 **Excel Spreadsheet**: "Master Intelligence Index" - quick reference with all articles
+
+### 🆕 Deep PDF Analysis (New!)
+- **Full Report Processing**: Downloads and analyzes major PDF reports (50+ pages)
+- **Text Extraction**: Full text extraction using PyMuPDF
+- **Table Extraction**: Converts PDF tables to structured data with pdfplumber
+- **Chart Analysis**: AI Vision describes charts and graphs
+- **Statistics Extraction**: Automatically extracts key numbers and percentages
+- **Smart Selection**: Only major reports from priority sources get deep analysis
+
+### Advanced Features
+- 🎯 **TL;DR Top 5**: Critical developments ranked by importance
+- 📈 **Market Sentiment**: Bullish/Neutral/Bearish indicator
+- 💼 **Actionable Implications**: For investors, businesses, policymakers
+- 🌍 **Regional Breakdown**: Global, Americas, Europe, Asia-Pacific, India
+- 📊 **Key Economic Numbers**: Live data from FRED API
+- 🔄 **Cross-Source Synthesis**: Consensus vs divergent views
+- 📧 **Automated Delivery**: Weekly email with mobile-friendly HTML digest
+
+---
 
 ## 🏛️ Organizations Covered (44)
 
@@ -33,13 +46,15 @@ An automated agent that monitors **44 leading economic and financial organizatio
 | **Rating Agencies** | Moody's, Fitch, S&P Ratings |
 | **India** | RBI, MoSPI, Ministry of Finance, NITI Aayog |
 
+---
+
 ## 🚀 Quick Start
 
 ### 1. Clone and Install
 
 ```bash
-git clone https://github.com/yourusername/economic_intelligence_agent.git
-cd economic_intelligence_agent
+git clone https://github.com/suyash0111/economic-intelligence-agent.git
+cd economic-intelligence-agent
 pip install -r requirements.txt
 ```
 
@@ -85,11 +100,13 @@ python main.py --orgs "Fed,IMF,RBI,McKinsey"
 python main.py --limit 5
 ```
 
+---
+
 ## ⚙️ GitHub Actions (Automated)
 
 ### Setup Secrets
 
-In your GitHub repository, go to Settings → Secrets and Variables → Actions, add:
+In your GitHub repository, go to **Settings → Secrets and Variables → Actions**, add:
 
 | Secret | Description |
 |--------|-------------|
@@ -103,6 +120,17 @@ In your GitHub repository, go to Settings → Secrets and Variables → Actions,
 The agent runs automatically every **Monday at 6:00 AM IST** (00:30 UTC).
 
 You can also trigger manually from the Actions tab.
+
+### Expected Runtime
+
+| Mode | Time | API Calls |
+|------|------|-----------|
+| Surface Analysis Only | ~25 mins | ~330 |
+| **With Deep PDF Analysis** | ~60-70 mins | ~750 |
+
+All within Gemini free tier (1,500 calls/day).
+
+---
 
 ## 📁 Project Structure
 
@@ -118,16 +146,22 @@ economic_intelligence_agent/
 │   ├── pdf_extractor.py      # PDF content extraction
 │   └── collector_manager.py  # Orchestrates all collectors
 ├── analyzers/
-│   └── gemini_analyzer.py    # Gemini AI + FRED API integration
+│   ├── gemini_analyzer.py    # Gemini AI + FRED API + Deep Analysis
+│   └── pdf_processor.py      # PDF download, text/table/chart extraction
 ├── generators/
-│   ├── document_generator.py # Word document output
+│   ├── document_generator.py # Word document output (with rich charts/tables)
 │   └── excel_generator.py    # Excel spreadsheet output
 ├── delivery/
 │   └── email_sender.py       # Email with mobile-friendly HTML
+├── cache/
+│   └── pdfs/                 # Temporary PDF storage (auto-cleaned)
+├── output/                   # Generated reports
 ├── main.py                   # Main entry point
 ├── requirements.txt          # Python dependencies
 └── .github/workflows/        # GitHub Actions
 ```
+
+---
 
 ## 📊 Report Contents
 
@@ -143,17 +177,46 @@ economic_intelligence_agent/
 8. **THEMATIC OVERVIEW** - Articles by theme (Monetary Policy, Inflation, etc.)
 9. **ORGANIZATION DETAILS** - Full analysis for all 44 organizations
 
+### Deep-Analyzed Reports Include:
+
+```
+• Report Title  📄 Full Report Analyzed
+
+📊 KEY STATISTICS EXTRACTED:
+• 70% of companies now deploy generative AI
+• 30% of work hours potentially automatable by 2030
+• $15-25 trillion added to global GDP by 2030
+
+📈 CHARTS ANALYZED:
+[Chart 1] Bar chart showing financial services (78%) leading adoption...
+[Chart 2] Line graph projecting job displacement trends...
+
+📋 KEY TABLES:
+| Occupation | % Automatable | Workers (M) |
+|------------|---------------|-------------|
+| Data Entry | 85% | 45M |
+| Customer Service | 65% | 78M |
+
+**1. THE NON-OBVIOUS TRUTHS**
+[Deep analysis of what headlines miss...]
+
+**2. MACRO & MICRO INDICATORS**
+[Economic implications...]
+```
+
 ### Excel Spreadsheet (Master_Intelligence_Index.xlsx)
 
-Columns:
-- Organization
-- Title
-- Published Date
-- Category (e.g., Monetary Policy, Trade, Employment)
-- Content Type (Report, Press Release, etc.)
-- Importance Score (1-10)
-- One-liner Summary
-- Link
+| Column | Description |
+|--------|-------------|
+| Organization | Source organization |
+| Title | Article/report title |
+| Published Date | Publication date |
+| Category | e.g., Monetary Policy, Trade |
+| Content Type | Report, Press Release, etc. |
+| Summary | AI-generated one-liner |
+| Link | Clickable URL |
+
+---
 
 ## 🛠️ Customization
 
@@ -173,19 +236,58 @@ Edit `config/organizations.yaml`:
       type: "news"
 ```
 
-### Adjust Lookback Period
+### Adjust Settings
 
 In `.env`:
 
 ```env
-LOOKBACK_DAYS=7     # Default: 7 days
-MAX_ARTICLES_PER_ORG=20
+LOOKBACK_DAYS=7          # Default: 7 days
+MAX_ARTICLES_PER_ORG=20  # Articles per organization
 ```
+
+### Configure Deep Analysis Sources
+
+Edit `analyzers/pdf_processor.py`:
+
+```python
+DEEP_ANALYSIS_SOURCES = [
+    'Fed', 'ECB', 'IMF', 'McKinsey', ...
+]
+```
+
+---
+
+## 📋 Requirements
+
+- Python 3.11+
+- Gemini API Key (free tier works!)
+- Gmail account with App Password (for email delivery)
+
+### Key Dependencies
+
+```
+google-generativeai    # Gemini AI
+pymupdf               # PDF text extraction
+pdfplumber            # PDF table extraction
+Pillow                # Image processing for charts
+python-docx           # Word document generation
+openpyxl              # Excel generation
+```
+
+---
 
 ## 📝 License
 
 MIT License - feel free to use and modify.
 
+---
+
 ## 🤝 Contributing
 
 Contributions welcome! Please open an issue or PR.
+
+---
+
+## 📧 Contact
+
+Created by Suyash - Economic Intelligence for the modern world.

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class OpenRouterAnalyzer:
     """AI analyzer using OpenRouter API with multiple free models."""
     
-    # Free models in order of preference
+    # Free models in order of preference - verified working as of Jan 2026
     FREE_MODELS = [
         {
             "id": "meta-llama/llama-3.3-70b-instruct:free",
@@ -25,20 +25,20 @@ class OpenRouterAnalyzer:
             "best_for": "Complex analysis, reasoning"
         },
         {
-            "id": "mistralai/mistral-small-3.1-24b-instruct:free",
-            "name": "Mistral Small 24B",
-            "context": 96000,
-            "best_for": "Fast processing"
-        },
-        {
             "id": "google/gemma-3-27b-it:free",
             "name": "Gemma 3 27B",
             "context": 128000,
             "best_for": "Multilingual, reasoning"
         },
         {
-            "id": "meta-llama/llama-3.1-8b-instruct:free",
-            "name": "Llama 3.1 8B",
+            "id": "google/gemma-3-12b-it:free",
+            "name": "Gemma 3 12B",
+            "context": 128000,
+            "best_for": "Fast, multimodal"
+        },
+        {
+            "id": "meta-llama/llama-3.2-3b-instruct:free",
+            "name": "Llama 3.2 3B",
             "context": 131072,
             "best_for": "Simple summaries"
         }
@@ -325,44 +325,42 @@ Cross-Source Synthesis:"""
         return result or ""
     
     def generate_theme_summary(self, articles: list[Article]) -> dict:
-        """Generate theme-based summary of articles."""
-        if self.quota_exhausted or not articles:
+        """Generate theme-based summary of articles in format expected by document_generator."""
+        if not articles:
             return {}
         
-        # Define themes
-        themes = {
-            "Monetary Policy": [],
-            "Trade & Tariffs": [],
-            "Inflation": [],
-            "Employment": [],
-            "Growth & GDP": [],
-            "Financial Markets": [],
-            "Technology & AI": [],
-            "Energy & Climate": []
+        # Define theme keywords
+        theme_keywords = {
+            "Monetary Policy": ['rate', 'fed', 'central bank', 'monetary', 'interest', 'ecb', 'boe'],
+            "Trade & Tariffs": ['trade', 'tariff', 'export', 'import', 'wto'],
+            "Inflation": ['inflation', 'cpi', 'price', 'deflation'],
+            "Employment": ['job', 'employment', 'unemployment', 'labor', 'wage', 'workforce'],
+            "Growth & GDP": ['gdp', 'growth', 'recession', 'expansion', 'economic'],
+            "Financial Markets": ['stock', 'bond', 'equity', 'market', 'investor', 'banking'],
+            "Technology & AI": ['ai', 'tech', 'digital', 'artificial', 'automation'],
+            "Energy & Climate": ['energy', 'oil', 'climate', 'carbon', 'renewable']
         }
         
-        # Categorize articles by keyword matching
-        for article in articles:
-            text = f"{article.title} {article.summary or ''}".lower()
-            if any(w in text for w in ['rate', 'fed', 'central bank', 'monetary', 'interest']):
-                themes["Monetary Policy"].append(article.title)
-            if any(w in text for w in ['trade', 'tariff', 'export', 'import', 'wto']):
-                themes["Trade & Tariffs"].append(article.title)
-            if any(w in text for w in ['inflation', 'cpi', 'price', 'deflation']):
-                themes["Inflation"].append(article.title)
-            if any(w in text for w in ['job', 'employment', 'unemployment', 'labor', 'wage']):
-                themes["Employment"].append(article.title)
-            if any(w in text for w in ['gdp', 'growth', 'recession', 'expansion']):
-                themes["Growth & GDP"].append(article.title)
-            if any(w in text for w in ['stock', 'bond', 'equity', 'market', 'investor']):
-                themes["Financial Markets"].append(article.title)
-            if any(w in text for w in ['ai', 'tech', 'digital', 'artificial', 'automation']):
-                themes["Technology & AI"].append(article.title)
-            if any(w in text for w in ['energy', 'oil', 'climate', 'carbon', 'renewable']):
-                themes["Energy & Climate"].append(article.title)
+        # Build result with format: {theme: {count, sources, headlines}}
+        result = {}
+        for theme, keywords in theme_keywords.items():
+            theme_articles = []
+            theme_sources = set()
+            
+            for article in articles:
+                text = f"{article.title} {article.summary or ''}".lower()
+                if any(kw in text for kw in keywords):
+                    theme_articles.append(article.title)
+                    theme_sources.add(article.source)
+            
+            if theme_articles:
+                result[theme] = {
+                    'count': len(theme_articles),
+                    'sources': list(theme_sources)[:5],
+                    'headlines': theme_articles[:5]
+                }
         
-        # Remove empty themes and limit articles
-        return {k: v[:5] for k, v in themes.items() if v}
+        return result
     
     def generate_actionable_implications(self, articles: list[Article]) -> str:
         """Generate actionable implications from the articles."""
@@ -390,28 +388,37 @@ Actionable Implications:"""
         return result or ""
     
     def generate_geographic_summary(self, articles: list[Article]) -> dict:
-        """Generate geographic breakdown of articles."""
+        """Generate geographic breakdown of articles in format expected by document_generator."""
         if not articles:
             return {}
         
         # Define regions
         regions = {
-            "United States": ["us", "usa", "america", "fed", "treasury", "washington"],
-            "Europe": ["europe", "eu", "ecb", "eurozone", "uk", "britain", "germany", "france"],
-            "Asia Pacific": ["china", "japan", "india", "asia", "pacific", "asean", "korea"],
-            "Emerging Markets": ["emerging", "brazil", "mexico", "africa", "middle east", "latam"],
-            "Global": ["global", "world", "imf", "worldbank", "wto", "g20", "g7", "oecd"]
+            "Global": ["global", "world", "imf", "worldbank", "wto", "g20", "g7", "oecd"],
+            "Americas": ["us", "usa", "america", "fed", "treasury", "washington", "canada", "brazil", "mexico"],
+            "Europe": ["europe", "eu", "ecb", "eurozone", "uk", "britain", "germany", "france", "boe"],
+            "Asia-Pacific": ["china", "japan", "india", "asia", "pacific", "asean", "korea", "pboc", "boj"],
+            "India": ["india", "rbi", "niti", "mospi", "rupee", "sensex", "nifty"]
         }
         
+        # Build result with format: {region: {count, sources, headlines}}
         result = {}
-        for article in articles:
-            text = f"{article.title} {article.source} {article.summary or ''}".lower()
-            for region, keywords in regions.items():
+        for region, keywords in regions.items():
+            region_articles = []
+            region_sources = set()
+            
+            for article in articles:
+                text = f"{article.title} {article.source} {article.summary or ''}".lower()
                 if any(kw in text for kw in keywords):
-                    if region not in result:
-                        result[region] = []
-                    if len(result[region]) < 5:  # Limit per region
-                        result[region].append(article.title)
+                    region_articles.append(article.title)
+                    region_sources.add(article.source)
+            
+            if region_articles:
+                result[region] = {
+                    'count': len(region_articles),
+                    'sources': list(region_sources)[:5],
+                    'headlines': region_articles[:5]
+                }
         
         return result
     

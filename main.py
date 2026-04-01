@@ -159,16 +159,21 @@ def run_agent(
                 enriched_articles = enricher.enrich_articles(ranked_articles)
 
                 # ============================================================
-                # STEP 2e: ARTICLE ANALYSIS (Models 1 & 2: Qwen 72B + DeepSeek)
+                # STEP 2e: ARTICLE ANALYSIS + MULTI-PASS (Qwen + DeepSeek + Kimi)
                 # ============================================================
-                logger.info(f"[NVIDIA] 🟢🔵 Analyzing {len(enriched_articles)} articles...")
+                logger.info(f"[NVIDIA] 🟢🔵🟡 Analyzing {len(enriched_articles)} articles...")
                 logger.info("[NVIDIA]   🟢 Qwen 2.5 72B → executive summaries")
                 logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → deep analysis (major reports)")
+                logger.info("[NVIDIA]   🟡 Kimi K2 → strategic assessment (top 5)")
+                if analyzer.groq_client:
+                    logger.info("[NVIDIA]   🔄 Groq Llama 3.3 70B → fallback if credits exhaust")
                 analyzed_articles = analyzer.analyze_batch(enriched_articles)
 
-                if analyzer.quota_exhausted:
-                    logger.warning("[NVIDIA] Credits exhausted during article analysis")
+                if analyzer.quota_exhausted and not analyzer.groq_client:
+                    logger.warning("[NVIDIA] Credits exhausted during article analysis (no Groq fallback)")
                     logger.info(f"[NVIDIA] Success: {analyzer.successful_requests}, Failed: {analyzer.failed_requests}")
+                elif analyzer.using_groq_fallback:
+                    logger.info(f"[NVIDIA] Switched to Groq fallback after {analyzer.successful_requests} NVIDIA calls. Groq calls: {analyzer.groq_calls}")
                 else:
                     logger.info(f"[NVIDIA] Article analysis complete: {analyzer.successful_requests} successful")
 

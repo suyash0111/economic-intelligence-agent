@@ -4,10 +4,12 @@ NVIDIA NIM Multi-Model Analyzer - 6-Model Architecture for World-Class Economic 
 Models:
   1. Qwen 2.5 72B Instruct - Executive summaries & short analysis
   2. DeepSeek V3.1 Terminus - Deep analysis & reasoning
-  3. Llama 4 Maverick - Vision/chart analysis
-  4. Rerank QA Mistral - Article relevance ranking
-  5. NV-Embed-V1 - Embeddings for dedup & clustering
-  6. Kimi K2 Instruct - Long-context final synthesis
+  3. Rerank QA Mistral - Article relevance ranking
+  4. NV-Embed-V1 - Embeddings for dedup & clustering
+  5. Kimi K2 Instruct - Long-context final synthesis
+
+Fallback: Groq API (Llama 3.3 70B) when NVIDIA credits exhaust
+Chart Analysis: Text-based interpretation (no vision model needed)
 """
 
 import logging
@@ -31,14 +33,20 @@ logger = logging.getLogger(__name__)
 
 class NvidiaModels:
     """NVIDIA NIM model identifiers."""
-    SUMMARIZER = "qwen/qwen2.5-72b-instruct"          # Was Mistral Small 24B → 3x upgrade
+    SUMMARIZER = "qwen/qwen2.5-72b-instruct"
     DEEP_ANALYZER = "deepseek-ai/deepseek-v3.1-terminus"
-    VISION = "meta/llama-4-maverick-17b-128e-instruct"
     RERANKER = "nvidia/nv-rerankqa-mistral-4b-v3"
     EMBEDDER = "nvidia/nv-embed-v1"
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"
 
     BASE_URL = "https://integrate.api.nvidia.com/v1"
+
+
+class GroqModels:
+    """Groq API model identifiers (fallback when NVIDIA credits exhaust)."""
+    SUMMARIZER = "llama-3.3-70b-versatile"
+    ANALYZER = "llama-3.3-70b-versatile"
+    BASE_URL = "https://api.groq.com/openai/v1"
 
 
 class NvidiaAnalyzer:
@@ -48,21 +56,33 @@ class NvidiaAnalyzer:
     """
 
     def __init__(self):
-        """Initialize the NVIDIA NIM analyzer with all model clients."""
+        """Initialize the NVIDIA NIM analyzer with Groq fallback."""
         if not Settings.NVIDIA_API_KEY:
             raise ValueError("NVIDIA_API_KEY not set in environment")
 
-        # Single OpenAI-compatible client for all chat/completion models
+        # Primary: NVIDIA NIM client
         self.client = OpenAI(
             base_url=NvidiaModels.BASE_URL,
             api_key=Settings.NVIDIA_API_KEY
         )
 
-        # Rate limiting - NVIDIA allows ~40 RPM, we use 30 to be safe
+        # Fallback: Groq client (activated when NVIDIA credits exhaust)
+        self.groq_client = None
+        self.using_groq_fallback = False
+        if Settings.GROQ_API_KEY:
+            self.groq_client = OpenAI(
+                base_url=GroqModels.BASE_URL,
+                api_key=Settings.GROQ_API_KEY
+            )
+            logger.info("  ✅ Groq fallback configured (Llama 3.3 70B)")
+        else:
+            logger.warning("  ⚠️ No GROQ_API_KEY - no fallback if NVIDIA credits exhaust")
+
+        # Rate limiting
         self.requests_per_minute = 30
         self.request_count = 0
         self.last_reset = time.time()
-        self.min_delay_between_requests = 2.0  # 2s between calls (vs 4s for Gemini)
+        self.min_delay_between_requests = 2.0
         self.last_request_time = 0
 
         # Credit tracking
@@ -70,16 +90,16 @@ class NvidiaAnalyzer:
         self.successful_requests = 0
         self.failed_requests = 0
         self.credits_estimate = 0
+        self.groq_calls = 0  # Track Groq fallback usage
 
         # Quota exhaustion detection
         self.consecutive_errors = 0
         self.max_consecutive_errors = 5
         self.quota_exhausted = False
 
-        logger.info(f"NVIDIA NIM Analyzer initialized with 6-model architecture")
+        logger.info(f"NVIDIA NIM Analyzer initialized (5 models + Groq fallback)")
         logger.info(f"  🟢 Summarizer:  {NvidiaModels.SUMMARIZER}")
         logger.info(f"  🔵 Analyzer:    {NvidiaModels.DEEP_ANALYZER}")
-        logger.info(f"  🟣 Vision:      {NvidiaModels.VISION}")
         logger.info(f"  🟠 Reranker:    {NvidiaModels.RERANKER}")
         logger.info(f"  🧬 Embedder:    {NvidiaModels.EMBEDDER}")
         logger.info(f"  🟡 Synthesizer: {NvidiaModels.SYNTHESIZER}")
@@ -177,21 +197,52 @@ class NvidiaAnalyzer:
                    max_tokens: int = 1024, temperature: float = 0.3,
                    system_prompt: str = None, credit_cost: int = 1,
                    max_retries: int = 2) -> str:
-        """Safely make a chat call with retry and fallback."""
-        for attempt in range(max_retries):
-            try:
-                can_proceed = self._check_rate_limit()
-                if not can_proceed:
-                    return fallback
+        """Safely make a chat call with retry, Groq fallback, and fallback text."""
+        # Try NVIDIA NIM first
+        if not self.quota_exhausted:
+            for attempt in range(max_retries):
+                try:
+                    can_proceed = self._check_rate_limit()
+                    if not can_proceed:
+                        break  # Fall through to Groq
 
-                result = self._chat(model, prompt, max_tokens, temperature, system_prompt)
-                self._mark_success(credit_cost)
-                return result
-            except Exception as e:
-                should_retry = self._handle_api_error(e)
-                if not should_retry or self.quota_exhausted:
-                    return fallback
+                    result = self._chat(model, prompt, max_tokens, temperature, system_prompt)
+                    self._mark_success(credit_cost)
+                    return result
+                except Exception as e:
+                    should_retry = self._handle_api_error(e)
+                    if not should_retry or self.quota_exhausted:
+                        break  # Fall through to Groq
+
+        # Groq fallback when NVIDIA credits exhaust
+        if self.groq_client and (self.quota_exhausted or self.using_groq_fallback):
+            self.using_groq_fallback = True
+            return self._groq_chat(prompt, fallback, max_tokens, temperature)
+
         return fallback
+
+    def _groq_chat(self, prompt: str, fallback: str = "",
+                   max_tokens: int = 1024, temperature: float = 0.3) -> str:
+        """Make a chat call to Groq API as fallback."""
+        try:
+            # Rate limit Groq too (30 RPM on free tier)
+            time.sleep(2.0)
+
+            response = self.groq_client.chat.completions.create(
+                model=GroqModels.SUMMARIZER,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=False
+            )
+            self.groq_calls += 1
+            result = response.choices[0].message.content.strip()
+            if self.groq_calls % 10 == 0:
+                logger.info(f"[GROQ] Fallback active: {self.groq_calls} calls made")
+            return result
+        except Exception as e:
+            logger.warning(f"[GROQ] Fallback also failed: {e}")
+            return fallback
 
     def _safe_vision_chat(self, prompt: str, image_bytes: bytes,
                           fallback: str = "", max_tokens: int = 512) -> str:
@@ -509,7 +560,7 @@ class NvidiaAnalyzer:
         return article
 
     def analyze_batch(self, articles: list[Article], batch_size: int = 10) -> list[Article]:
-        """Analyze multiple articles efficiently."""
+        """Analyze multiple articles efficiently, then apply multi-pass to top articles."""
         analyzed = []
         filtered_count = 0
         total = len(articles)
@@ -525,8 +576,143 @@ class NvidiaAnalyzer:
                            f"(filtered: {filtered_count}, credits: ~{self.credits_estimate}, calls: {self.total_api_calls})")
                 time.sleep(1)
 
-        logger.info(f"Analysis complete: {len(analyzed)} articles ({filtered_count} filtered), ~{self.credits_estimate} credits used")
+        logger.info(f"Single-pass complete: {len(analyzed)} articles ({filtered_count} filtered), ~{self.credits_estimate} credits")
+
+        # Multi-pass analysis for top 5 most important articles
+        if not self.quota_exhausted or self.groq_client:
+            analyzed = self._apply_multi_pass(analyzed)
+
+        logger.info(f"Analysis complete: {len(analyzed)} articles, ~{self.credits_estimate} credits, {self.groq_calls} Groq calls")
         return analyzed
+
+    def _apply_multi_pass(self, articles: list[Article], top_n: int = 5) -> list[Article]:
+        """
+        Apply 3-pass analysis to the top N articles by importance score.
+        Pass 1: Extract key facts & numbers (Qwen 72B)
+        Pass 2: Cross-reference with other articles (DeepSeek V3.1)
+        Pass 3: Generate strategic assessment (Kimi K2)
+        """
+        # Sort by importance and select top N that have analysis content
+        candidates = [
+            a for a in articles
+            if a.ai_analysis and a.verification_status not in ('filtered', 'unverified')
+            and a.importance_score >= 6
+        ]
+        candidates.sort(key=lambda a: a.importance_score, reverse=True)
+        top_articles = candidates[:top_n]
+
+        if not top_articles:
+            return articles
+
+        logger.info(f"[MULTI-PASS] Enhancing top {len(top_articles)} articles with 3-pass analysis...")
+
+        # Collect all summaries for cross-referencing context
+        all_summaries = "\n".join([
+            f"- {a.source}: {a.title} — {(a.ai_summary or '')[:150]}"
+            for a in articles
+            if a.ai_summary and a.verification_status != 'filtered'
+        ][:20])  # Top 20 summaries as context
+
+        for idx, article in enumerate(top_articles):
+            logger.info(f"[MULTI-PASS] ({idx+1}/{len(top_articles)}) {article.title[:50]}...")
+
+            # Get article's full text for deeper analysis
+            full_text = article.content_preview or article.summary or ''
+
+            # === PASS 1: FACT EXTRACTION (Qwen 72B) ===
+            facts = self._safe_chat(
+                model=NvidiaModels.SUMMARIZER,
+                prompt=f"""Extract every concrete fact, number, date, and data point from this article.
+
+TITLE: {article.title}
+SOURCE: {article.source_full}
+TEXT: {full_text[:3000]}
+EXISTING ANALYSIS: {(article.ai_analysis or '')[:1000]}
+
+List every factual claim as a bullet point. Include:
+- Specific numbers (percentages, dollar amounts, growth rates)
+- Named entities (people, organizations, countries)
+- Dates and timelines
+- Policy decisions or announcements
+- Comparisons with previous periods
+
+Do NOT editorialize. Only state facts found in the text.
+Write in plain text without markdown formatting.""",
+                fallback="",
+                max_tokens=512,
+                temperature=0.1
+            )
+
+            if not facts:
+                continue
+
+            # === PASS 2: CROSS-REFERENCE (DeepSeek V3.1) ===
+            cross_ref = self._safe_chat(
+                model=NvidiaModels.DEEP_ANALYZER,
+                prompt=f"""You are a senior economic analyst cross-referencing intelligence reports.
+
+ARTICLE BEING ANALYZED:
+Title: {article.title}
+Source: {article.source_full}
+Facts extracted: {facts[:1500]}
+
+OTHER REPORTS THIS WEEK:
+{all_summaries}
+
+Cross-reference this article with the other reports above and answer:
+1. CORROBORATION: Which other reports support or confirm the findings in this article?
+2. CONTRADICTIONS: Do any other reports present conflicting data?
+3. BLIND SPOTS: What important context or data is missing from this article that other reports cover?
+4. INTERCONNECTIONS: How does this article connect to broader economic trends visible across multiple reports?
+
+Write 3-4 paragraphs. Be specific — name the sources and data points.
+Do NOT use markdown formatting. Write in plain professional English.""",
+                fallback="",
+                max_tokens=768,
+                temperature=0.3,
+                credit_cost=2
+            )
+
+            # === PASS 3: STRATEGIC ASSESSMENT (Kimi K2 or DeepSeek) ===
+            assessment = self._safe_chat(
+                model=NvidiaModels.SYNTHESIZER if not self.quota_exhausted else NvidiaModels.DEEP_ANALYZER,
+                prompt=f"""You are the Chief Economist writing a strategic assessment for institutional investors.
+
+ARTICLE: {article.title} ({article.source_full})
+
+VERIFIED FACTS:
+{facts[:1000]}
+
+CROSS-REFERENCE ANALYSIS:
+{(cross_ref or 'No cross-reference available')[:1000]}
+
+Write a strategic assessment covering:
+1. INVESTMENT IMPLICATIONS: What does this mean for asset allocation, sectors, and risk?
+2. POLICY TRAJECTORY: Where is this heading in the next 3-6 months?
+3. SECOND-ORDER EFFECTS: What indirect consequences will ripple through the economy?
+4. ACTIONABLE INTELLIGENCE: What should decision-makers do differently based on this?
+
+Write 3-4 concise paragraphs. This is for sophisticated readers — be specific and opinionated.
+Do NOT use markdown formatting. Write in plain professional English.""",
+                fallback="",
+                max_tokens=768,
+                temperature=0.4,
+                credit_cost=2
+            )
+
+            # Combine all passes into enhanced analysis
+            if cross_ref or assessment:
+                enhanced = article.ai_analysis or ""
+                if cross_ref:
+                    enhanced += "\n\nCROSS-SOURCE INTELLIGENCE\n" + cross_ref
+                if assessment:
+                    enhanced += "\n\nSTRATEGIC ASSESSMENT\n" + assessment
+
+                article.ai_analysis = enhanced
+                article.verification_status = "deep_verified"
+                logger.info(f"[MULTI-PASS] Enhanced: {article.title[:40]}... (+{len(cross_ref or '')+len(assessment or '')} chars)")
+
+        return articles
 
     def _fallback_analysis(self, article: Article) -> Article:
         """Provide fallback analysis when credits are exhausted."""
@@ -1088,27 +1274,55 @@ CRITICAL FORMATTING RULES:
                     credit_cost=2
                 )
 
-            # 4. Analyze charts using Llama 4 Maverick (Vision)
-            #    Also store image bytes for Word document embedding
-            for i, image_bytes in enumerate(extracted_content.images[:3]):
-                if self.quota_exhausted:
-                    break
-                description = self._safe_vision_chat(
-                    prompt=f"""This is a chart/graph from an economic report titled "{article.title}".
-Describe in 3-4 sentences:
-1. What type of chart is it? (bar, line, pie, scatter, etc.)
-2. What data does it show? What are the axes/labels?
-3. What is the key takeaway or trend?
-4. Any specific numbers or data points visible?
-Be specific. If the image is NOT a chart (e.g., a logo or photo), say "This image is not a chart" and briefly describe what it shows.""",
-                    image_bytes=image_bytes,
-                    fallback=""
+            # 4. Text-based chart analysis (replaces broken vision model)
+            #    Uses surrounding text + table data to describe charts
+            #    Still store images for Word embedding
+            if extracted_content.images and not self.quota_exhausted:
+                # Store images for Word doc (up to 3)
+                for img in extracted_content.images[:3]:
+                    result['chart_images'].append(img)
+
+                # Generate text-based chart descriptions from the report data
+                tables_context = ""
+                for td in result['table_data'][:3]:
+                    headers = ', '.join(str(h) for h in td.get('headers', [])[:6] if h)
+                    sample_row = ', '.join(str(c) for c in td.get('rows', [[]])[0][:6] if c) if td.get('rows') else ''
+                    tables_context += f"\nTable (page {td['page']}): Columns: {headers}. Sample row: {sample_row}"
+
+                stats_list = '\n'.join('- ' + s for s in result['key_statistics'][:6]) if result['key_statistics'] else 'No statistics extracted'
+                insufficient_msg = 'Insufficient data to describe report visualizations.'
+
+                chart_analysis = self._safe_chat(
+                    model=NvidiaModels.DEEP_ANALYZER,
+                    prompt=f"""This economic report "{article.title}" from {article.source_full} contains {len(extracted_content.images)} images/charts and {len(extracted_content.tables)} data tables.
+
+Based on the report text and table data below, describe what charts and visualizations are likely included in this report.
+For each chart (up to 3), describe:
+1. What type of chart it likely is (bar, line, trend, comparison)
+2. What data it shows based on the statistics and tables
+3. The key trend or takeaway
+
+KEY STATISTICS FROM REPORT:
+{stats_list}
+
+TABLE DATA:{tables_context if tables_context else ' No tables extracted'}
+
+REPORT TEXT (first 2000 chars):
+{extracted_content.full_text[:2000]}
+
+Write 1-3 chart descriptions as separate paragraphs. Each should be 2-3 sentences.
+Do NOT use markdown formatting. Write in plain professional English.
+If there is not enough data to describe charts, write: {insufficient_msg}""",
+                    fallback="",
+                    max_tokens=512,
+                    temperature=0.2
                 )
-                if description and 'not a chart' not in description.lower():
-                    result['chart_descriptions'].append(description)
-                    result['chart_images'].append(image_bytes)
-                elif description:
-                    logger.debug(f"Skipped non-chart image: {description[:50]}")
+                if chart_analysis and 'insufficient' not in chart_analysis.lower():
+                    # Split into separate descriptions
+                    for para in chart_analysis.split('\n\n'):
+                        para = para.strip()
+                        if len(para) > 30:
+                            result['chart_descriptions'].append(para)
 
             # 5. Store structured table data (headers + rows) for proper Word rendering
             for table in extracted_content.tables[:5]:

@@ -18,6 +18,7 @@ class Settings:
 
     # API Keys
     NVIDIA_API_KEY: str = os.getenv('NVIDIA_API_KEY', '')
+    GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')  # Fallback when NVIDIA credits exhaust
     GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')  # Legacy fallback
     OPENROUTER_API_KEY: str = os.getenv('OPENROUTER_API_KEY', '')
 

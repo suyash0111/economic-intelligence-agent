@@ -1,61 +1,68 @@
 # 📊 Economic Intelligence Agent
 
-> **World-class automated economic intelligence** powered by NVIDIA NIM's 7-Model Architecture. Collects, deduplicates, analyzes, and synthesizes economic reports from 39 global organizations into actionable weekly briefings.
+> **World-class automated economic intelligence** powered by NVIDIA NIM's 5-Model Architecture + Groq Fallback. Collects, enriches, analyzes (multi-pass), and synthesizes economic reports from 39 global organizations into actionable weekly briefings.
 
-## 🏗️ Architecture: 7-Model NVIDIA NIM Engine
+## 🏗️ Architecture: 5-Model NVIDIA NIM + Groq Fallback
 
 ```
 📰 277 Articles Collected
         │
         ▼
-🧬 Model 5: NV-Embed-V1 ──── Smart Deduplication & Topic Clustering
+🧬 Model 4: NV-Embed-V1 ──── Smart Deduplication & Topic Clustering
         │
         ▼ (~200 unique)
-🟠 Model 4: Rerank-QA-Mistral ──── AI Relevance Ranking
+🟠 Model 3: Rerank-QA-Mistral ──── AI Relevance Ranking
         │
         ▼ (ranked by importance)
+🌐 Full-Text Enrichment ──── Fetch & parse actual article bodies
+        │
+        ▼ (10-50x more content)
    ┌────┴────┐
    │         │
 🟢 Model 1  🔵 Model 2
-Mistral      DeepSeek V3.1
-Small 3.1    Terminus
-(Quick       (Deep analysis
-summaries)   128K context)
+Qwen 2.5     DeepSeek V3.1
+72B Instruct Terminus
+(Executive   (Deep analysis +
+summaries)   text-based charts)
    │         │
-   │    ┌────┴────┐
-   │    │         │
-   │  🟣 Model 3  🔴 Model 6
-   │  Llama 4     OCDRNet
-   │  Maverick    (OCR for
-   │  (Vision/    scanned
-   │  charts)     PDFs)
-   │    │         │
-   └────┴────┬────┘
-             │
-             ▼
-🟡 Model 7: Kimi K2 Instruct ──── Long-Context Final Synthesis
-             │
-             ▼
-📊 Executive Summary + Cross-Source Intelligence + Sentiment + Implications
+   └────┬────┘
+        │
+  [MULTI-PASS for top 5 articles]
+  Pass 1: Fact extraction (Qwen 72B)
+  Pass 2: Cross-reference (DeepSeek V3.1)
+  Pass 3: Strategic assessment (Kimi K2)
+        │
+        ▼
+🟡 Model 5: Kimi K2 Instruct ──── Long-Context Final Synthesis
+        │
+        ▼
+📊 Executive Summary + Cross-Source Intelligence + Strategic Assessment
+
+🔄 Groq Fallback: Llama 3.3 70B ──── Auto-activates if NVIDIA credits exhaust
 ```
 
-### The 7 Models
+### The 5 NVIDIA Models + Groq Fallback
 
 | # | Model | Role | Why |
 |---|-------|------|-----|
-| 🟢 | **Mistral Small 3.1** (24B) | Quick article summaries | Fast, cheap — handles ~200 articles efficiently |
-| 🔵 | **DeepSeek V3.1 Terminus** | Deep analysis & reasoning | 128K context, Think/Non-Think modes, best reasoning |
-| 🟣 | **Llama 4 Maverick** | Chart/image analysis | Multimodal vision — reads graphs from PDFs |
+| 🟢 | **Qwen 2.5 72B Instruct** | Executive summaries | 72B parameters — rich, nuanced financial text understanding |
+| 🔵 | **DeepSeek V3.1 Terminus** | Deep analysis + chart interpretation | 128K context, best reasoning, text-based chart analysis |
 | 🟠 | **Rerank QA Mistral** | Article relevance ranking | Purpose-built ranker, not a general LLM |
 | 🧬 | **NV-Embed-V1** | Dedup + semantic clustering | Removes duplicate articles, saves credits |
-| 🔴 | **OCDRNet** | OCR for scanned PDFs | Extracts text from image-based PDFs |
-| 🟡 | **Kimi K2 Instruct** | Final synthesis | Longest context — sees ALL analyses at once |
+| 🟡 | **Kimi K2 Instruct** | Final synthesis + strategic assessment | Longest context — sees ALL analyses at once |
+| 🔄 | **Groq Llama 3.3 70B** | Automatic fallback | Activates when NVIDIA credits exhaust — zero downtime |
+
+### Key Features
+- **Multi-pass analysis**: Top 5 articles get 3 analysis passes (facts → cross-reference → strategic assessment)
+- **Full-text enrichment**: Articles are fetched and parsed in full before AI analysis
+- **Groq fallback**: Automatic failover prevents credit-exhaustion downtime
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Python 3.11+
 - NVIDIA API Key (free from [build.nvidia.com](https://build.nvidia.com))
+- Groq API Key (free from [console.groq.com](https://console.groq.com))
 - Gmail account with App Password
 
 ### Setup

@@ -2,14 +2,13 @@
 """
 Economic Intelligence Agent - Main Orchestration Script
 
-Powered by NVIDIA NIM 7-Model Architecture:
-  1. Mistral Small 3.1 - Quick article summaries
+Powered by NVIDIA NIM 6-Model Architecture:
+  1. Qwen 2.5 72B Instruct - Executive summaries & short analysis
   2. DeepSeek V3.1 Terminus - Deep analysis & reasoning
   3. Llama 4 Maverick - Vision/chart analysis
   4. Rerank QA Mistral - Article relevance ranking
   5. NV-Embed-V1 - Embeddings for dedup & clustering
-  6. OCDRNet - OCR for scanned PDFs
-  7. Kimi K2 Instruct - Long-context final synthesis
+  6. Kimi K2 Instruct - Long-context final synthesis
 
 Usage:
     python main.py                    # Full run with email delivery
@@ -72,7 +71,7 @@ def run_agent(
     """
     logger.info("=" * 60)
     logger.info("Economic Intelligence Agent Starting")
-    logger.info("Powered by NVIDIA NIM 7-Model Architecture")
+    logger.info("Powered by NVIDIA NIM 6-Model Architecture")
     logger.info("=" * 60)
 
     date_range = get_date_range()
@@ -108,7 +107,7 @@ def run_agent(
         logger.info(f"[OK] Collected {len(all_articles)} articles from {len(articles_by_org)} organizations")
 
         # Step 2: AI Analysis with NVIDIA NIM
-        logger.info("\n[STEP 2] AI Analysis with NVIDIA NIM 7-Model Engine...")
+        logger.info("\n[STEP 2] AI Analysis with NVIDIA NIM 6-Model Engine...")
 
         tldr_top5 = ""
         cross_source = ""
@@ -125,7 +124,7 @@ def run_agent(
             logger.warning("[WARNING] NVIDIA_API_KEY not set - skipping AI analysis")
             executive_summary = f"Weekly economic intelligence covering {len(all_articles)} articles from {len(articles_by_org)} organizations."
         else:
-            logger.info("[NVIDIA] Initializing 7-model architecture...")
+            logger.info("[NVIDIA] Initializing 6-model architecture...")
             try:
                 analyzer = NvidiaAnalyzer()
 
@@ -152,12 +151,20 @@ def run_agent(
                 logger.info("[OK] Articles ranked by economic relevance")
 
                 # ============================================================
-                # STEP 2d: ARTICLE ANALYSIS (Models 1 & 2: Mistral Small + DeepSeek)
+                # STEP 2d: FULL-TEXT ENRICHMENT (fetch article bodies)
                 # ============================================================
-                logger.info(f"[NVIDIA] 🟢🔵 Analyzing {len(ranked_articles)} articles...")
-                logger.info("[NVIDIA]   🟢 Mistral Small 3.1 → quick summaries")
+                logger.info(f"[ENRICH] Fetching full article text for {len(ranked_articles)} articles...")
+                from collectors.article_enricher import ArticleEnricher
+                enricher = ArticleEnricher()
+                enriched_articles = enricher.enrich_articles(ranked_articles)
+
+                # ============================================================
+                # STEP 2e: ARTICLE ANALYSIS (Models 1 & 2: Qwen 72B + DeepSeek)
+                # ============================================================
+                logger.info(f"[NVIDIA] 🟢🔵 Analyzing {len(enriched_articles)} articles...")
+                logger.info("[NVIDIA]   🟢 Qwen 2.5 72B → executive summaries")
                 logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → deep analysis (major reports)")
-                analyzed_articles = analyzer.analyze_batch(ranked_articles)
+                analyzed_articles = analyzer.analyze_batch(enriched_articles)
 
                 if analyzer.quota_exhausted:
                     logger.warning("[NVIDIA] Credits exhausted during article analysis")
@@ -344,7 +351,7 @@ def test_email():
             <body style="font-family: Arial, sans-serif; padding: 20px;">
                 <h2>✅ Test Successful!</h2>
                 <p>Your Economic Intelligence Agent email configuration is working correctly.</p>
-                <p>Now powered by <b>NVIDIA NIM 7-Model Architecture</b>.</p>
+                <p>Now powered by <b>NVIDIA NIM 6-Model Architecture</b>.</p>
                 <p>You will receive weekly reports at this address every Monday.</p>
             </body>
             </html>

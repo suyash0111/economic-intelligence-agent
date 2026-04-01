@@ -270,7 +270,7 @@ class EmailSender:
 
             <div class="footer">
                 <p><strong>THE GLOBAL PULSE</strong></p>
-                <p style="opacity: 0.7;">Automated Weekly Intelligence | Powered by NVIDIA NIM 7-Model Architecture</p>
+                <p style="opacity: 0.7;">Automated Weekly Intelligence | Powered by NVIDIA NIM 6-Model Architecture</p>
             </div>
         </body>
         </html>

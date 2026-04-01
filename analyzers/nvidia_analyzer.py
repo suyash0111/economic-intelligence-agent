@@ -1,14 +1,13 @@
 """
-NVIDIA NIM Multi-Model Analyzer - 7-Model Architecture for World-Class Economic Intelligence.
+NVIDIA NIM Multi-Model Analyzer - 6-Model Architecture for World-Class Economic Intelligence.
 
 Models:
-  1. Mistral Small 3.1 (24B) - Quick article summaries
+  1. Qwen 2.5 72B Instruct - Executive summaries & short analysis
   2. DeepSeek V3.1 Terminus - Deep analysis & reasoning
   3. Llama 4 Maverick - Vision/chart analysis
   4. Rerank QA Mistral - Article relevance ranking
   5. NV-Embed-V1 - Embeddings for dedup & clustering
-  6. OCDRNet - OCR for scanned PDFs
-  7. Kimi K2 Instruct - Long-context final synthesis
+  6. Kimi K2 Instruct - Long-context final synthesis
 """
 
 import logging
@@ -32,12 +31,11 @@ logger = logging.getLogger(__name__)
 
 class NvidiaModels:
     """NVIDIA NIM model identifiers."""
-    SUMMARIZER = "mistralai/mistral-small-3.1-24b-instruct-2503"
+    SUMMARIZER = "qwen/qwen2.5-72b-instruct"          # Was Mistral Small 24B → 3x upgrade
     DEEP_ANALYZER = "deepseek-ai/deepseek-v3.1-terminus"
     VISION = "meta/llama-4-maverick-17b-128e-instruct"
     RERANKER = "nvidia/nv-rerankqa-mistral-4b-v3"
     EMBEDDER = "nvidia/nv-embed-v1"
-    OCR = "nvidia/ocdrnet"
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"
 
     BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -45,7 +43,7 @@ class NvidiaModels:
 
 class NvidiaAnalyzer:
     """
-    AI-powered content analyzer using NVIDIA NIM's 7-model architecture.
+    AI-powered content analyzer using NVIDIA NIM's 6-model architecture.
     Drop-in replacement for GeminiAnalyzer with the same public API.
     """
 
@@ -78,13 +76,12 @@ class NvidiaAnalyzer:
         self.max_consecutive_errors = 5
         self.quota_exhausted = False
 
-        logger.info(f"NVIDIA NIM Analyzer initialized with 7-model architecture")
+        logger.info(f"NVIDIA NIM Analyzer initialized with 6-model architecture")
         logger.info(f"  🟢 Summarizer:  {NvidiaModels.SUMMARIZER}")
         logger.info(f"  🔵 Analyzer:    {NvidiaModels.DEEP_ANALYZER}")
         logger.info(f"  🟣 Vision:      {NvidiaModels.VISION}")
         logger.info(f"  🟠 Reranker:    {NvidiaModels.RERANKER}")
         logger.info(f"  🧬 Embedder:    {NvidiaModels.EMBEDDER}")
-        logger.info(f"  🔴 OCR:         {NvidiaModels.OCR}")
         logger.info(f"  🟡 Synthesizer: {NvidiaModels.SYNTHESIZER}")
 
     # =====================================================================

@@ -293,7 +293,7 @@ class DocumentGenerator:
         powered = self.doc.add_paragraph()
         powered.alignment = WD_ALIGN_PARAGRAPH.CENTER
         powered.paragraph_format.space_before = Pt(60)
-        run = powered.add_run("Powered by NVIDIA NIM 7-Model Architecture")
+        run = powered.add_run("Powered by NVIDIA NIM 6-Model Architecture")
         run.font.size = Pt(9)
         run.font.italic = True
         run.font.color.rgb = LIGHT_GREY

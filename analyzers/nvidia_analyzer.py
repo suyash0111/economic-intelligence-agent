@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class NvidiaModels:
     """NVIDIA NIM model identifiers."""
     SUMMARIZER = "qwen/qwen2.5-72b-instruct"
-    DEEP_ANALYZER = "deepseek-ai/deepseek-v3.2"
+    DEEP_ANALYZER = "qwen/qwen2.5-72b-instruct"  # DeepSeek V3.x returns 404 on free tier
     RERANKER = "nvidia/nv-rerankqa-mistral-4b-v3"
     EMBEDDER = "nvidia/nv-embed-v1"
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"

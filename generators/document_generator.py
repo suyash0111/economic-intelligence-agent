@@ -1445,8 +1445,9 @@ class DocumentGenerator:
                     sum_run.font.name = FONT_FAMILY
                     sum_run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
 
-                # Deep analysis (if multi-pass verified)
-                if hasattr(article, 'deep_analysis') and article.deep_analysis:
+                # Deep analysis (if PDF deep-analyzed)
+                deep = getattr(article, 'deep_analysis', None)
+                if deep and isinstance(deep, dict) and deep.get('success'):
                     deep_p = self.doc.add_paragraph()
                     deep_p.paragraph_format.left_indent = Inches(0.3)
                     badge = deep_p.add_run("\u2b50 Deep Verified: ")
@@ -1454,7 +1455,30 @@ class DocumentGenerator:
                     badge.font.size = SMALL_SIZE
                     badge.font.color.rgb = GREEN
                     badge.font.name = FONT_FAMILY
-                    analysis_run = deep_p.add_run(article.deep_analysis[:400])
+
+                    # Extract text from deep_analysis dict
+                    deep_text = ""
+                    if deep.get('chunks'):
+                        deep_text = " ".join(
+                            chunk.get('summary', '') for chunk in deep['chunks']
+                            if isinstance(chunk, dict)
+                        )[:500]
+                    if not deep_text:
+                        stats = deep.get('stats', {})
+                        deep_text = f"{stats.get('pages', '?')} pages, {stats.get('charts', 0)} charts, {stats.get('tables', 0)} tables analyzed"
+
+                    analysis_run = deep_p.add_run(deep_text)
+                    analysis_run.font.size = SMALL_SIZE
+                    analysis_run.font.name = FONT_FAMILY
+                elif deep and isinstance(deep, str) and len(deep) > 10:
+                    deep_p = self.doc.add_paragraph()
+                    deep_p.paragraph_format.left_indent = Inches(0.3)
+                    badge = deep_p.add_run("\u2b50 Deep Verified: ")
+                    badge.font.bold = True
+                    badge.font.size = SMALL_SIZE
+                    badge.font.color.rgb = GREEN
+                    badge.font.name = FONT_FAMILY
+                    analysis_run = deep_p.add_run(deep[:400])
                     analysis_run.font.size = SMALL_SIZE
                     analysis_run.font.name = FONT_FAMILY
 

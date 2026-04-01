@@ -40,7 +40,7 @@ jobs:
       
       - name: Run Economic Intelligence Agent
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
@@ -59,6 +59,7 @@ jobs:
           fi
           
           echo "Running: $CMD"
+          echo "Powered by NVIDIA NIM 7-Model Architecture"
           $CMD
       
       - name: Upload reports as artifacts

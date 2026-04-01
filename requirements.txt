@@ -4,8 +4,8 @@ beautifulsoup4>=4.12.0
 feedparser>=6.0.0
 lxml>=5.0.0
 
-# AI/LLM
-google-generativeai>=0.8.0
+# AI/LLM - NVIDIA NIM (OpenAI-compatible API)
+openai>=1.30.0
 
 # Document generation
 python-docx>=1.1.0
@@ -29,4 +29,3 @@ python-dateutil>=2.8.0
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
-

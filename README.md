@@ -1,293 +1,181 @@
-# The Global Pulse 📊
-## Weekly Economic Intelligence Agent
+# 📊 Economic Intelligence Agent
 
-An automated agent that monitors **44 leading economic and financial organizations** weekly, performs **deep PDF analysis** using AI, and delivers comprehensive intelligence reports via email.
+> **World-class automated economic intelligence** powered by NVIDIA NIM's 7-Model Architecture. Collects, deduplicates, analyzes, and synthesizes economic reports from 39 global organizations into actionable weekly briefings.
 
----
+## 🏗️ Architecture: 7-Model NVIDIA NIM Engine
 
-## 🌟 Features
+```
+📰 277 Articles Collected
+        │
+        ▼
+🧬 Model 5: NV-Embed-V1 ──── Smart Deduplication & Topic Clustering
+        │
+        ▼ (~200 unique)
+🟠 Model 4: Rerank-QA-Mistral ──── AI Relevance Ranking
+        │
+        ▼ (ranked by importance)
+   ┌────┴────┐
+   │         │
+🟢 Model 1  🔵 Model 2
+Mistral      DeepSeek V3.1
+Small 3.1    Terminus
+(Quick       (Deep analysis
+summaries)   128K context)
+   │         │
+   │    ┌────┴────┐
+   │    │         │
+   │  🟣 Model 3  🔴 Model 6
+   │  Llama 4     OCDRNet
+   │  Maverick    (OCR for
+   │  (Vision/    scanned
+   │  charts)     PDFs)
+   │    │         │
+   └────┴────┬────┘
+             │
+             ▼
+🟡 Model 7: Kimi K2 Instruct ──── Long-Context Final Synthesis
+             │
+             ▼
+📊 Executive Summary + Cross-Source Intelligence + Sentiment + Implications
+```
 
-### Core Capabilities
-- **Comprehensive Coverage**: Monitors 44 organizations including Fed, ECB, IMF, World Bank, RBI, McKinsey, and more
-- **AI-Powered Analysis**: Uses Google's Gemini 2.0 Flash AI for 360-degree analysis
-- **Multiple Output Formats**:
-  - 📄 **Word Document**: "The Global Pulse" - comprehensive agency-wise report (40-60 pages)
-  - 📊 **Excel Spreadsheet**: "Master Intelligence Index" - quick reference with all articles
+### The 7 Models
 
-### 🆕 Deep PDF Analysis (New!)
-- **Full Report Processing**: Downloads and analyzes major PDF reports (50+ pages)
-- **Text Extraction**: Full text extraction using PyMuPDF
-- **Table Extraction**: Converts PDF tables to structured data with pdfplumber
-- **Chart Analysis**: AI Vision describes charts and graphs
-- **Statistics Extraction**: Automatically extracts key numbers and percentages
-- **Smart Selection**: Only major reports from priority sources get deep analysis
-
-### Advanced Features
-- 🎯 **TL;DR Top 5**: Critical developments ranked by importance
-- 📈 **Market Sentiment**: Bullish/Neutral/Bearish indicator
-- 💼 **Actionable Implications**: For investors, businesses, policymakers
-- 🌍 **Regional Breakdown**: Global, Americas, Europe, Asia-Pacific, India
-- 📊 **Key Economic Numbers**: Live data from FRED API
-- 🔄 **Cross-Source Synthesis**: Consensus vs divergent views
-- 📧 **Automated Delivery**: Weekly email with mobile-friendly HTML digest
-
----
-
-## 🏛️ Organizations Covered (44)
-
-| Category | Organizations |
-|----------|---------------|
-| **Central Banks** | Fed, ECB, Bank of England, Bank of Japan, PBoC |
-| **International** | IMF, World Bank, WTO, OECD, WEF, BIS, UNCTAD, ILO, UNDP, NBER, ADB |
-| **Consulting** | McKinsey, Deloitte, BCG, PwC, EY, KPMG, Accenture, Bain |
-| **Think Tanks** | Brookings, PIIE, Bruegel, Oxford Economics, Capital Economics |
-| **Investment Banks** | Goldman Sachs, JP Morgan |
-| **News** | Bloomberg, Reuters, WSJ, Financial Times, S&P Global, EIU |
-| **Rating Agencies** | Moody's, Fitch, S&P Ratings |
-| **India** | RBI, MoSPI, Ministry of Finance, NITI Aayog |
-
----
+| # | Model | Role | Why |
+|---|-------|------|-----|
+| 🟢 | **Mistral Small 3.1** (24B) | Quick article summaries | Fast, cheap — handles ~200 articles efficiently |
+| 🔵 | **DeepSeek V3.1 Terminus** | Deep analysis & reasoning | 128K context, Think/Non-Think modes, best reasoning |
+| 🟣 | **Llama 4 Maverick** | Chart/image analysis | Multimodal vision — reads graphs from PDFs |
+| 🟠 | **Rerank QA Mistral** | Article relevance ranking | Purpose-built ranker, not a general LLM |
+| 🧬 | **NV-Embed-V1** | Dedup + semantic clustering | Removes duplicate articles, saves credits |
+| 🔴 | **OCDRNet** | OCR for scanned PDFs | Extracts text from image-based PDFs |
+| 🟡 | **Kimi K2 Instruct** | Final synthesis | Longest context — sees ALL analyses at once |
 
 ## 🚀 Quick Start
 
-### 1. Clone and Install
+### Prerequisites
+- Python 3.11+
+- NVIDIA API Key (free from [build.nvidia.com](https://build.nvidia.com))
+- Gmail account with App Password
+
+### Setup
 
 ```bash
+# Clone the repository
 git clone https://github.com/suyash0111/economic-intelligence-agent.git
 cd economic-intelligence-agent
+
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Configure Environment
-
-```bash
+# Configure environment
 cp .env.example .env
+# Edit .env with your NVIDIA_API_KEY, email credentials
 ```
 
-Edit `.env` with your credentials:
-
-```env
-# Get from https://aistudio.google.com/apikey
-GEMINI_API_KEY=your_gemini_api_key
-
-# Gmail with App Password
-EMAIL_ADDRESS=your_email@gmail.com
-EMAIL_APP_PASSWORD=your_app_password
-RECIPIENT_EMAIL=recipient@example.com
-```
-
-> **Note**: For Gmail App Password:
-> 1. Enable 2-Factor Authentication
-> 2. Go to Google Account → Security → App Passwords
-> 3. Generate a password for "Mail"
-
-### 3. Run Locally
+### Run
 
 ```bash
 # Full run with email delivery
 python main.py
 
-# Generate reports without email (dry run)
+# Generate reports without email (testing)
 python main.py --dry-run
 
-# Test email configuration
-python main.py --test-email
+# Test with limited organizations
+python main.py --dry-run --limit 3
 
 # Process specific organizations only
-python main.py --orgs "Fed,IMF,RBI,McKinsey"
-
-# Limit to N organizations (for testing)
-python main.py --limit 5
+python main.py --orgs IMF,RBI,Fed
 ```
 
----
+## 🔑 Environment Variables
 
-## ⚙️ GitHub Actions (Automated)
-
-### Setup Secrets
-
-In your GitHub repository, go to **Settings → Secrets and Variables → Actions**, add:
-
-| Secret | Description |
-|--------|-------------|
-| `GEMINI_API_KEY` | Your Gemini API key |
-| `EMAIL_ADDRESS` | Gmail address for sending |
-| `EMAIL_APP_PASSWORD` | Gmail App Password |
-| `RECIPIENT_EMAIL` | Email to receive reports |
-
-### Schedule
-
-The agent runs automatically every **Monday at 6:00 AM IST** (00:30 UTC).
-
-You can also trigger manually from the Actions tab.
-
-### Expected Runtime
-
-| Mode | Time | API Calls |
-|------|------|-----------|
-| Surface Analysis Only | ~25 mins | ~330 |
-| **With Deep PDF Analysis** | ~60-70 mins | ~750 |
-
-All within Gemini free tier (1,500 calls/day).
-
----
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `NVIDIA_API_KEY` | NVIDIA NIM API key from [build.nvidia.com](https://build.nvidia.com) | ✅ |
+| `EMAIL_ADDRESS` | Gmail address for sending reports | ✅ |
+| `EMAIL_APP_PASSWORD` | Gmail App Password | ✅ |
+| `RECIPIENT_EMAIL` | Report recipient email | ✅ |
+| `LOOKBACK_DAYS` | How many days back to collect articles (default: 7) | ❌ |
+| `MAX_ARTICLES_PER_ORG` | Max articles per organization (default: 20) | ❌ |
 
 ## 📁 Project Structure
 
 ```
 economic_intelligence_agent/
-├── config/
-│   ├── settings.py           # Configuration management
-│   └── organizations.yaml    # All 44 organizations
-├── collectors/
-│   ├── base_collector.py     # Base class and Article model
-│   ├── rss_collector.py      # RSS/Atom feed collector
-│   ├── web_collector.py      # Web scraping collector
-│   ├── pdf_extractor.py      # PDF content extraction
-│   └── collector_manager.py  # Orchestrates all collectors
 ├── analyzers/
-│   ├── gemini_analyzer.py    # Gemini AI + FRED API + Deep Analysis
-│   └── pdf_processor.py      # PDF download, text/table/chart extraction
+│   ├── nvidia_analyzer.py     # 🆕 7-model NVIDIA NIM engine
+│   ├── gemini_analyzer.py     # Legacy Gemini analyzer (backup)
+│   └── pdf_processor.py       # PDF download, extraction, chunking
+├── collectors/
+│   ├── base_collector.py      # Article dataclass & base collector
+│   └── collector_manager.py   # Multi-org collection orchestrator
+├── config/
+│   ├── settings.py            # Environment & configuration
+│   └── organizations.yaml     # 39 organization definitions
 ├── generators/
-│   ├── document_generator.py # Word document output (with rich charts/tables)
-│   └── excel_generator.py    # Excel spreadsheet output
+│   ├── document_generator.py  # Word document report generator
+│   └── excel_generator.py     # Excel spreadsheet generator
 ├── delivery/
-│   └── email_sender.py       # Email with mobile-friendly HTML
-├── cache/
-│   └── pdfs/                 # Temporary PDF storage (auto-cleaned)
-├── output/                   # Generated reports
-├── main.py                   # Main entry point
-├── requirements.txt          # Python dependencies
-└── .github/workflows/        # GitHub Actions
+│   └── email_sender.py        # Gmail SMTP email delivery
+├── .github/
+│   └── workflows/
+│       └── weekly_report.yml  # Automated Monday morning runs
+├── main.py                    # Main orchestration script
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
 ```
+
+## 📈 Credit Budget
+
+Each full run uses approximately **~320 NVIDIA credits**:
+
+| Step | Model | Credits |
+|------|-------|---------|
+| Embedding & dedup | NV-Embed-V1 | ~30 |
+| Ranking | Rerank-QA-Mistral | ~25 |
+| Quick summaries | Mistral Small 3.1 | ~150 |
+| Deep analysis | DeepSeek V3.1 | ~60 |
+| Chart analysis | Llama 4 Maverick | ~15 |
+| OCR | OCDRNet | ~10 |
+| Final synthesis | Kimi K2 Instruct | ~30 |
+| **Total** | | **~320** |
+
+With **5,000 free credits** → ≈ **15 weekly runs** → ≈ **3.5 months** of reports.
+
+## 🏛️ Organizations Covered (39)
+
+**Central Banks**: Fed, ECB, BoE, BoJ, PBoC, RBI, and more
+**International**: IMF, World Bank, OECD, WTO, BIS, WEF
+**Government (India)**: MoF, MoSPI, NITI Aayog
+**Think Tanks**: Brookings, PIIE, Bruegel, NBER
+**Consulting**: McKinsey, Deloitte, BCG, PwC
+**Financial**: Goldman Sachs, JP Morgan
+**Media**: FT, Bloomberg, Reuters, WSJ
+
+## 🤖 GitHub Actions (Automated)
+
+The agent runs automatically every **Monday at 6:00 AM IST** via GitHub Actions.
+
+To trigger manually: Repository → Actions → "Weekly Economic Intelligence Report" → Run workflow
+
+### Required GitHub Secrets
+
+| Secret | Value |
+|--------|-------|
+| `NVIDIA_API_KEY` | Your NVIDIA NIM API key |
+| `EMAIL_ADDRESS` | Gmail address |
+| `EMAIL_APP_PASSWORD` | Gmail App Password |
+| `RECIPIENT_EMAIL` | Report recipient |
+
+## 📄 Output
+
+Each run generates:
+1. **Word Document** — Full report with executive summary, analysis, and charts
+2. **Excel Spreadsheet** — All articles with AI summaries, scores, and categories
+3. **Email** — HTML email with TL;DR and sentiment analysis
 
 ---
 
-## 📊 Report Contents
-
-### Word Document (Global_Pulse_Weekly_Report.docx)
-
-1. **TOP 5 THIS WEEK** - Critical developments ranked by importance
-2. **KEY ECONOMIC NUMBERS** - Live FRED data (US inflation, unemployment, etc.)
-3. **MARKET SENTIMENT** - Bullish/Neutral/Bearish assessment
-4. **EXECUTIVE SUMMARY** - Week's highlights
-5. **CROSS-SOURCE INTELLIGENCE** - Consensus and divergent views
-6. **ACTIONABLE IMPLICATIONS** - For investors, businesses, policymakers
-7. **REGIONAL BREAKDOWN** - Geographic grouping
-8. **THEMATIC OVERVIEW** - Articles by theme (Monetary Policy, Inflation, etc.)
-9. **ORGANIZATION DETAILS** - Full analysis for all 44 organizations
-
-### Deep-Analyzed Reports Include:
-
-```
-• Report Title  📄 Full Report Analyzed
-
-📊 KEY STATISTICS EXTRACTED:
-• 70% of companies now deploy generative AI
-• 30% of work hours potentially automatable by 2030
-• $15-25 trillion added to global GDP by 2030
-
-📈 CHARTS ANALYZED:
-[Chart 1] Bar chart showing financial services (78%) leading adoption...
-[Chart 2] Line graph projecting job displacement trends...
-
-📋 KEY TABLES:
-| Occupation | % Automatable | Workers (M) |
-|------------|---------------|-------------|
-| Data Entry | 85% | 45M |
-| Customer Service | 65% | 78M |
-
-**1. THE NON-OBVIOUS TRUTHS**
-[Deep analysis of what headlines miss...]
-
-**2. MACRO & MICRO INDICATORS**
-[Economic implications...]
-```
-
-### Excel Spreadsheet (Master_Intelligence_Index.xlsx)
-
-| Column | Description |
-|--------|-------------|
-| Organization | Source organization |
-| Title | Article/report title |
-| Published Date | Publication date |
-| Category | e.g., Monetary Policy, Trade |
-| Content Type | Report, Press Release, etc. |
-| Summary | AI-generated one-liner |
-| Link | Clickable URL |
-
----
-
-## 🛠️ Customization
-
-### Add an Organization
-
-Edit `config/organizations.yaml`:
-
-```yaml
-- name: "Your Organization"
-  short_name: "ORG"
-  category: "Category"
-  description: "Description"
-  feeds:
-    - "https://example.com/rss"
-  scrape_urls:
-    - url: "https://example.com/news"
-      type: "news"
-```
-
-### Adjust Settings
-
-In `.env`:
-
-```env
-LOOKBACK_DAYS=7          # Default: 7 days
-MAX_ARTICLES_PER_ORG=20  # Articles per organization
-```
-
-### Configure Deep Analysis Sources
-
-Edit `analyzers/pdf_processor.py`:
-
-```python
-DEEP_ANALYSIS_SOURCES = [
-    'Fed', 'ECB', 'IMF', 'McKinsey', ...
-]
-```
-
----
-
-## 📋 Requirements
-
-- Python 3.11+
-- Gemini API Key (free tier works!)
-- Gmail account with App Password (for email delivery)
-
-### Key Dependencies
-
-```
-google-generativeai    # Gemini AI
-pymupdf               # PDF text extraction
-pdfplumber            # PDF table extraction
-Pillow                # Image processing for charts
-python-docx           # Word document generation
-openpyxl              # Excel generation
-```
-
----
-
-## 📝 License
-
-MIT License - feel free to use and modify.
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please open an issue or PR.
-
----
-
-## 📧 Contact
-
-Created by Suyash - Economic Intelligence for the modern world.
+*Built with ❤️ and 7 AI models*

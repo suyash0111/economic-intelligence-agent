@@ -1,6 +1,5 @@
 """Analyzers module for Economic Intelligence Agent."""
 
-from .gemini_analyzer import GeminiAnalyzer
-from .openrouter_analyzer import OpenRouterAnalyzer
+from .nvidia_analyzer import NvidiaAnalyzer
 
-__all__ = ['GeminiAnalyzer', 'OpenRouterAnalyzer']
+__all__ = ['NvidiaAnalyzer']

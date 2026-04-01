@@ -43,20 +43,32 @@ class NvidiaModels:
 
 
 class GroqModels:
-    """Groq API model identifiers (fallback when NVIDIA credits exhaust)."""
-    SUMMARIZER = "llama-3.3-70b-versatile"
-    ANALYZER = "llama-3.3-70b-versatile"
+    """Groq API — Fallback 1."""
+    MODEL = "llama-3.3-70b-versatile"
     BASE_URL = "https://api.groq.com/openai/v1"
+
+
+class CerebrasModels:
+    """Cerebras API — Fallback 2 (fastest inference)."""
+    MODEL = "llama-3.3-70b"
+    BASE_URL = "https://api.cerebras.ai/v1"
+
+
+class OpenRouterModels:
+    """OpenRouter API — Fallback 3 (widest model selection)."""
+    SUMMARIZER = "meta-llama/llama-3.3-70b-instruct:free"
+    ANALYZER = "nousresearch/hermes-3-llama-3.1-405b:free"
+    BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class NvidiaAnalyzer:
     """
-    AI-powered content analyzer using NVIDIA NIM's 6-model architecture.
-    Drop-in replacement for GeminiAnalyzer with the same public API.
+    AI-powered content analyzer using NVIDIA NIM + 3-provider fallback chain.
+    NVIDIA NIM → Groq → Cerebras → OpenRouter
     """
 
     def __init__(self):
-        """Initialize the NVIDIA NIM analyzer with Groq fallback."""
+        """Initialize the NVIDIA NIM analyzer with 3-provider fallback chain."""
         if not Settings.NVIDIA_API_KEY:
             raise ValueError("NVIDIA_API_KEY not set in environment")
 
@@ -66,17 +78,50 @@ class NvidiaAnalyzer:
             api_key=Settings.NVIDIA_API_KEY
         )
 
-        # Fallback: Groq client (activated when NVIDIA credits exhaust)
-        self.groq_client = None
-        self.using_groq_fallback = False
+        # Build fallback chain: Groq → Cerebras → OpenRouter
+        self.fallback_providers = []
+        self.using_fallback = False
+        self.active_fallback_name = None
+
         if Settings.GROQ_API_KEY:
-            self.groq_client = OpenAI(
-                base_url=GroqModels.BASE_URL,
-                api_key=Settings.GROQ_API_KEY
-            )
-            logger.info("  ✅ Groq fallback configured (Llama 3.3 70B)")
-        else:
-            logger.warning("  ⚠️ No GROQ_API_KEY - no fallback if NVIDIA credits exhaust")
+            self.fallback_providers.append({
+                'name': 'Groq',
+                'client': OpenAI(base_url=GroqModels.BASE_URL, api_key=Settings.GROQ_API_KEY),
+                'model': GroqModels.MODEL,
+                'delay': 2.0,
+                'calls': 0,
+                'failed': False,
+            })
+            logger.info("  ✅ Fallback 1: Groq (Llama 3.3 70B)")
+
+        if Settings.CEREBRAS_API_KEY:
+            self.fallback_providers.append({
+                'name': 'Cerebras',
+                'client': OpenAI(base_url=CerebrasModels.BASE_URL, api_key=Settings.CEREBRAS_API_KEY),
+                'model': CerebrasModels.MODEL,
+                'delay': 1.0,  # Cerebras is very fast
+                'calls': 0,
+                'failed': False,
+            })
+            logger.info("  ✅ Fallback 2: Cerebras (Llama 3.3 70B)")
+
+        if Settings.OPENROUTER_API_KEY:
+            self.fallback_providers.append({
+                'name': 'OpenRouter',
+                'client': OpenAI(
+                    base_url=OpenRouterModels.BASE_URL,
+                    api_key=Settings.OPENROUTER_API_KEY,
+                    default_headers={'HTTP-Referer': 'https://github.com/suyash0111/economic-intelligence-agent'}
+                ),
+                'model': OpenRouterModels.SUMMARIZER,
+                'delay': 3.0,  # OpenRouter free has lower rate limits
+                'calls': 0,
+                'failed': False,
+            })
+            logger.info("  ✅ Fallback 3: OpenRouter (Hermes 405B / Llama 70B)")
+
+        if not self.fallback_providers:
+            logger.warning("  ⚠️ No fallback providers configured!")
 
         # Rate limiting
         self.requests_per_minute = 30
@@ -90,14 +135,15 @@ class NvidiaAnalyzer:
         self.successful_requests = 0
         self.failed_requests = 0
         self.credits_estimate = 0
-        self.groq_calls = 0  # Track Groq fallback usage
+        self.fallback_calls = 0
 
         # Quota exhaustion detection
         self.consecutive_errors = 0
         self.max_consecutive_errors = 5
         self.quota_exhausted = False
 
-        logger.info(f"NVIDIA NIM Analyzer initialized (5 models + Groq fallback)")
+        fb_count = len(self.fallback_providers)
+        logger.info(f"NVIDIA NIM Analyzer initialized (5 models + {fb_count} fallback providers)")
         logger.info(f"  🟢 Summarizer:  {NvidiaModels.SUMMARIZER}")
         logger.info(f"  🔵 Analyzer:    {NvidiaModels.DEEP_ANALYZER}")
         logger.info(f"  🟠 Reranker:    {NvidiaModels.RERANKER}")
@@ -197,14 +243,17 @@ class NvidiaAnalyzer:
                    max_tokens: int = 1024, temperature: float = 0.3,
                    system_prompt: str = None, credit_cost: int = 1,
                    max_retries: int = 2) -> str:
-        """Safely make a chat call with retry, Groq fallback, and fallback text."""
+        """
+        Safely make a chat call with retry + 4-provider fallback chain.
+        NVIDIA NIM → Groq → Cerebras → OpenRouter → fallback text
+        """
         # Try NVIDIA NIM first
         if not self.quota_exhausted:
             for attempt in range(max_retries):
                 try:
                     can_proceed = self._check_rate_limit()
                     if not can_proceed:
-                        break  # Fall through to Groq
+                        break  # Fall through to fallback chain
 
                     result = self._chat(model, prompt, max_tokens, temperature, system_prompt)
                     self._mark_success(credit_cost)
@@ -212,37 +261,63 @@ class NvidiaAnalyzer:
                 except Exception as e:
                     should_retry = self._handle_api_error(e)
                     if not should_retry or self.quota_exhausted:
-                        break  # Fall through to Groq
+                        break  # Fall through to fallback chain
 
-        # Groq fallback when NVIDIA credits exhaust
-        if self.groq_client and (self.quota_exhausted or self.using_groq_fallback):
-            self.using_groq_fallback = True
-            return self._groq_chat(prompt, fallback, max_tokens, temperature)
+        # Cascade through fallback providers
+        if self.quota_exhausted or self.using_fallback:
+            self.using_fallback = True
+            result = self._fallback_chat(prompt, max_tokens, temperature)
+            if result:
+                return result
 
         return fallback
 
-    def _groq_chat(self, prompt: str, fallback: str = "",
-                   max_tokens: int = 1024, temperature: float = 0.3) -> str:
-        """Make a chat call to Groq API as fallback."""
-        try:
-            # Rate limit Groq too (30 RPM on free tier)
-            time.sleep(2.0)
+    def _fallback_chat(self, prompt: str, max_tokens: int = 1024,
+                       temperature: float = 0.3) -> str:
+        """
+        Try each fallback provider in sequence until one succeeds.
+        Groq → Cerebras → OpenRouter
+        """
+        for provider in self.fallback_providers:
+            if provider['failed']:
+                continue  # Skip providers that have permanently failed
 
-            response = self.groq_client.chat.completions.create(
-                model=GroqModels.SUMMARIZER,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_tokens,
-                stream=False
-            )
-            self.groq_calls += 1
-            result = response.choices[0].message.content.strip()
-            if self.groq_calls % 10 == 0:
-                logger.info(f"[GROQ] Fallback active: {self.groq_calls} calls made")
-            return result
-        except Exception as e:
-            logger.warning(f"[GROQ] Fallback also failed: {e}")
-            return fallback
+            try:
+                time.sleep(provider['delay'])
+
+                response = provider['client'].chat.completions.create(
+                    model=provider['model'],
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=False
+                )
+
+                provider['calls'] += 1
+                self.fallback_calls += 1
+                self.active_fallback_name = provider['name']
+                result = response.choices[0].message.content.strip()
+
+                if self.fallback_calls % 10 == 0:
+                    summary = ', '.join(f"{p['name']}:{p['calls']}" for p in self.fallback_providers if p['calls'] > 0)
+                    logger.info(f"[FALLBACK] Active: {summary}")
+
+                return result
+
+            except Exception as e:
+                error_str = str(e).lower()
+                # Mark as permanently failed if auth error, otherwise just skip this call
+                if '401' in error_str or '403' in error_str or 'auth' in error_str:
+                    provider['failed'] = True
+                    logger.warning(f"[FALLBACK] {provider['name']} permanently failed (auth): {e}")
+                elif '429' in error_str or 'rate' in error_str:
+                    logger.info(f"[FALLBACK] {provider['name']} rate limited, trying next...")
+                else:
+                    logger.warning(f"[FALLBACK] {provider['name']} failed: {e}")
+                continue  # Try next provider
+
+        logger.warning("[FALLBACK] All providers exhausted")
+        return ""
 
     def _safe_vision_chat(self, prompt: str, image_bytes: bytes,
                           fallback: str = "", max_tokens: int = 512) -> str:

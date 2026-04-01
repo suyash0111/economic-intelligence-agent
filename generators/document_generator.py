@@ -75,7 +75,8 @@ class DocumentGenerator:
         sentiment_analysis: str = "",
         actionable_implications: str = "",
         geographic_summary: dict = None,
-        key_numbers: str = ""
+        key_numbers: str = "",
+        charts: list = None
     ) -> Path:
         """Generate a comprehensive Word document report."""
         self.doc = Document()
@@ -132,9 +133,19 @@ class DocumentGenerator:
             self._add_theme_content(theme_summary)
             self.doc.add_page_break()
 
+        # === SECTION 9: Economic Dashboard (Auto-Generated Charts) ===
+        if charts:
+            self._add_section_header("ECONOMIC DASHBOARD", "9")
+            self._add_intro_text(
+                "Professional charts generated from extracted report data, "
+                "statistics, and FRED economic indicators."
+            )
+            self._add_charts_section(charts)
+            self.doc.add_page_break()
+
         # === DETAILED COVERAGE BY ORGANIZATION ===
         orgs_by_category = self._group_by_category(articles_by_org)
-        section_num = 9
+        section_num = 10 if charts else 9
         for category in self._get_category_order():
             if category in orgs_by_category:
                 self._add_category_section(category, orgs_by_category[category], str(section_num))
@@ -293,7 +304,7 @@ class DocumentGenerator:
         powered = self.doc.add_paragraph()
         powered.alignment = WD_ALIGN_PARAGRAPH.CENTER
         powered.paragraph_format.space_before = Pt(60)
-        run = powered.add_run("Powered by NVIDIA NIM 6-Model Architecture")
+        run = powered.add_run("Powered by NVIDIA NIM 5-Model Architecture + Multi-Provider Fallback")
         run.font.size = Pt(9)
         run.font.italic = True
         run.font.color.rgb = LIGHT_GREY
@@ -1108,3 +1119,47 @@ class DocumentGenerator:
                 .replace('>', '&gt;')
                 .replace('"', '&quot;')
                 .replace("'", '&apos;'))
+
+    # =====================================================================
+    # ECONOMIC DASHBOARD (Auto-Generated Charts)
+    # =====================================================================
+
+    def _add_charts_section(self, charts: list):
+        """
+        Embed auto-generated charts into the document.
+        charts: list of (title, image_bytes) tuples
+        """
+        import io
+
+        for i, (title, image_bytes) in enumerate(charts):
+            try:
+                # Chart title
+                h = self.doc.add_heading(f"Figure {i+1}: {title}", level=2)
+                for run in h.runs:
+                    run.font.color.rgb = DARK_BLUE
+                    run.font.name = FONT_FAMILY
+
+                # Embed the chart image
+                image_stream = io.BytesIO(image_bytes)
+                self.doc.add_picture(image_stream, width=Inches(6.0))
+
+                # Center the image
+                last_paragraph = self.doc.paragraphs[-1]
+                last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                # Caption
+                caption = self.doc.add_paragraph()
+                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = caption.add_run(f"Figure {i+1}: {title}")
+                run.font.size = CAPTION_SIZE
+                run.font.color.rgb = GREY_TEXT
+                run.font.italic = True
+                run.font.name = FONT_FAMILY
+                caption.paragraph_format.space_after = Pt(20)
+
+            except Exception as e:
+                logger.warning(f"Could not embed chart '{title}': {e}")
+                # Add text fallback
+                p = self.doc.add_paragraph()
+                run = p.add_run(f"[Chart: {title} - could not be embedded]")
+                run.font.color.rgb = GREY_TEXT

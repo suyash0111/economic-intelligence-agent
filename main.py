@@ -117,6 +117,7 @@ def run_agent(
         geographic = {}
         key_numbers = ""
         executive_summary = ""
+        indicators = {}
         analyzed_articles = all_articles
 
         # Check for NVIDIA API key
@@ -172,10 +173,19 @@ def run_agent(
                 if analyzer.quota_exhausted and not analyzer.groq_client:
                     logger.warning("[NVIDIA] Credits exhausted during article analysis (no Groq fallback)")
                     logger.info(f"[NVIDIA] Success: {analyzer.successful_requests}, Failed: {analyzer.failed_requests}")
-                elif analyzer.using_groq_fallback:
-                    logger.info(f"[NVIDIA] Switched to Groq fallback after {analyzer.successful_requests} NVIDIA calls. Groq calls: {analyzer.groq_calls}")
+                elif analyzer.using_fallback:
+                    fb_summary = ', '.join(f"{p['name']}:{p['calls']}" for p in analyzer.fallback_providers if p['calls'] > 0)
+                    logger.info(f"[NVIDIA] Switched to fallback after {analyzer.successful_requests} NVIDIA calls. Fallback: {fb_summary}")
                 else:
                     logger.info(f"[NVIDIA] Article analysis complete: {analyzer.successful_requests} successful")
+
+                # Save to cache for future runs
+                from analyzers.analysis_cache import AnalysisCache
+                cache = AnalysisCache()
+                for article in analyzed_articles:
+                    cache.store_article(article)
+                cache.save()
+                logger.info(f"[CACHE] Saved {cache.hits} cache hits, {cache.misses} new analyses")
 
                 # ============================================================
                 # STEP 2e: DEEP PDF ANALYSIS (Models 2, 3, 6)
@@ -258,8 +268,9 @@ def run_agent(
                 logger.info(f"[NVIDIA] Successful: {analyzer.successful_requests}")
                 logger.info(f"[NVIDIA] Failed: {analyzer.failed_requests}")
                 logger.info(f"[NVIDIA] Estimated credits used: ~{analyzer.credits_estimate}")
+                logger.info(f"[NVIDIA] Fallback calls: {analyzer.fallback_calls}")
 
-                if analyzer.quota_exhausted:
+                if analyzer.quota_exhausted and not analyzer.fallback_providers:
                     logger.warning("[NVIDIA] Some analysis may be partial due to credit limits")
 
             except Exception as e:
@@ -274,10 +285,21 @@ def run_agent(
                 a for a in analyzed_articles if a.source == org_name
             ]
 
-        # Step 3: Generate reports
+        # Step 3: Generate reports + charts
         logger.info("\n[STEP 3] Generating reports...")
 
         Settings.ensure_output_dir()
+
+        # Generate professional charts from ALL extracted data
+        logger.info("[CHARTS] Generating professional charts from extracted data...")
+        from generators.chart_generator import ChartGenerator
+        chart_gen = ChartGenerator()
+        charts = chart_gen.generate_all_charts(
+            articles=all_articles,
+            analyzed_articles=analyzed_articles,
+            indicators=indicators
+        )
+        logger.info(f"[CHARTS] Generated {len(charts)} charts")
 
         doc_generator = DocumentGenerator()
         doc_path = doc_generator.generate(
@@ -290,7 +312,8 @@ def run_agent(
             sentiment_analysis=sentiment,
             actionable_implications=implications,
             geographic_summary=geographic,
-            key_numbers=key_numbers
+            key_numbers=key_numbers,
+            charts=charts
         )
         logger.info(f"[OK] Word document: {doc_path}")
 

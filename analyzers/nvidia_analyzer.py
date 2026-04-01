@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class NvidiaModels:
     """NVIDIA NIM model identifiers."""
     SUMMARIZER = "qwen/qwen2.5-72b-instruct"
-    DEEP_ANALYZER = "deepseek-ai/deepseek-v3.1-terminus"
+    DEEP_ANALYZER = "deepseek-ai/deepseek-v3.2"
     RERANKER = "nvidia/nv-rerankqa-mistral-4b-v3"
     EMBEDDER = "nvidia/nv-embed-v1"
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"
@@ -654,10 +654,10 @@ class NvidiaAnalyzer:
         logger.info(f"Single-pass complete: {len(analyzed)} articles ({filtered_count} filtered), ~{self.credits_estimate} credits")
 
         # Multi-pass analysis for top 5 most important articles
-        if not self.quota_exhausted or self.groq_client:
+        if not self.quota_exhausted or self.fallback_providers:
             analyzed = self._apply_multi_pass(analyzed)
 
-        logger.info(f"Analysis complete: {len(analyzed)} articles, ~{self.credits_estimate} credits, {self.groq_calls} Groq calls")
+        logger.info(f"Analysis complete: {len(analyzed)} articles, ~{self.credits_estimate} credits, {self.fallback_calls} fallback calls")
         return analyzed
 
     def _apply_multi_pass(self, articles: list[Article], top_n: int = 5) -> list[Article]:

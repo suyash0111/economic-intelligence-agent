@@ -1484,7 +1484,7 @@ class DocumentGenerator:
             run.font.name = FONT_FAMILY
 
         arch_items = [
-            "Primary Analysis: NVIDIA NIM (Qwen 2.5 72B, DeepSeek V3.1, Kimi K2)",
+            "Primary Analysis: NVIDIA NIM (Qwen 2.5 72B, DeepSeek V3.2, Kimi K2)",
             "Deduplication: NV-Embed-V1 semantic embeddings",
             "Ranking: NV-RerankQA-Mistral-4B",
             "Fallback Chain: Groq \u2192 Cerebras \u2192 OpenRouter (auto-triggered on credit exhaustion)",

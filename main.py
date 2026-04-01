@@ -166,7 +166,7 @@ def run_agent(
                 # ============================================================
                 logger.info(f"[NVIDIA] 🟢🔵🟡 Analyzing {len(enriched_articles)} articles...")
                 logger.info("[NVIDIA]   🟢 Qwen 2.5 72B → executive summaries")
-                logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → deep analysis (major reports)")
+                logger.info("[NVIDIA]   🔵 DeepSeek V3.2 → deep analysis (major reports)")
                 logger.info("[NVIDIA]   🟡 Kimi K2 → strategic assessment (top 5)")
                 if analyzer.fallback_providers:
                     fb_names = ', '.join(p['name'] for p in analyzer.fallback_providers)
@@ -201,7 +201,7 @@ def run_agent(
 
                     major_articles = [a for a in analyzed_articles if pdf_processor.should_deep_analyze(a)]
                     logger.info(f"[DEEP ANALYSIS] Found {len(major_articles)} major reports for deep PDF analysis")
-                    logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → PDF text analysis")
+                    logger.info("[NVIDIA]   🔵 DeepSeek V3.2 → PDF text analysis")
                     logger.info("[NVIDIA]   🟣 Llama 4 Maverick → chart/image vision")
                     logger.info("[NVIDIA]   🔴 OCDRNet → OCR for scanned PDFs")
 

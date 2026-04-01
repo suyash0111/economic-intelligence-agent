@@ -958,39 +958,42 @@ WRITING STYLE:
         )
 
     def generate_top5_tldr(self, articles: list[Article]) -> str:
-        """Generate TL;DR Top 5 section."""
+        """Generate 'This Week at a Glance' section using WEF BLUF format."""
         sorted_articles = sorted(articles, key=lambda x: x.importance_score, reverse=True)
-        top_5 = sorted_articles[:5]
+        top_7 = sorted_articles[:7]
 
-        if not top_5:
+        if not top_7:
             return "No critical developments this week."
 
         headlines = "\n".join([
-            f"{i+1}. [{a.source}] {a.title} (Score: {a.importance_score}/10)"
-            for i, a in enumerate(top_5)
+            f"{i+1}. [{a.source}] {a.title} — {(a.ai_summary or '')[:150]}"
+            for i, a in enumerate(top_7)
         ])
 
-        prompt = f"""Create a "TOP 5 THINGS TO KNOW THIS WEEK" section for busy executives.
+        prompt = f"""Create a "THIS WEEK AT A GLANCE" briefing for senior executives.
 
-The 5 most important developments (ranked by importance score):
+The 7 most important developments (ranked by importance):
 {headlines}
 
-For each item, write ONE sentence that answers: "What happened and why should I care?"
+Write 5-7 bullet points. Each bullet MUST follow this EXACT format:
+[BOLD ACTION HEADLINE]. [1-2 sentences of context with specific data if available].
 
-Format:
-1. 🔴 [HEADLINE IN BOLD] - One sentence explanation
-2. 🟠 [HEADLINE IN BOLD] - One sentence explanation
-...
+Example format:
+Fed holds rates despite inflation surprise. The March CPI print of 3.2% exceeded the expected 2.9%, but Powell's post-meeting statement signals patience through Q2.
 
-Use 🔴 for critical (score 8+), 🟠 for important (5-7), 🟢 for notable (below 5).
-Be specific. No jargon. Maximum 20 words per explanation.
-If you don't have the specific data, keep it general but accurate."""
+Rules:
+- The headline should be a SHORT declarative statement (5-8 words)
+- Follow it with 1-2 sentences providing context, numbers, and implications
+- Be specific — include percentages, names, organizations, dates
+- Do NOT use markdown formatting, emojis, asterisks, or hashtags
+- Do NOT use bullet symbols — just number them 1, 2, 3...
+- Write in plain professional English"""
 
         return self._safe_chat(
             model=NvidiaModels.DEEP_ANALYZER,
             prompt=prompt,
-            fallback="\n".join([f"• [{a.source}] {a.title}" for a in top_5]),
-            max_tokens=512,
+            fallback="\n".join([f"- [{a.source}] {a.title}" for a in top_7]),
+            max_tokens=768,
             temperature=0.3
         )
 
@@ -1596,3 +1599,88 @@ Do NOT use markdown formatting. Write in plain professional English.""",
                 themes.append(theme)
 
         return themes if themes else ['General Economic']
+
+    # =====================================================================
+    # NEW SYNTHESIS: FORWARD WATCHLIST (Goldman Sachs-inspired)
+    # =====================================================================
+
+    def generate_forward_watchlist(self, articles: list, date_range: str) -> str:
+        """Generate a Forward Watchlist section — what to monitor next week."""
+        article_context = "\n".join([
+            f"- [{a.source}] {a.title}: {(a.ai_summary or '')[:100]}"
+            for a in sorted(articles, key=lambda x: x.importance_score, reverse=True)[:15]
+        ])
+
+        prompt = f"""Based on this week's economic intelligence ({date_range}), create a FORWARD WATCHLIST for the coming week.
+
+This week's top intelligence:
+{article_context}
+
+Write three sub-sections:
+
+KEY EVENTS NEXT WEEK
+List 5-7 specific events to watch (central bank meetings, data releases, political events, earnings). Include dates if known.
+
+TRIPWIRES
+Write 3 conditional scenarios in this format: "If [specific event/data point], then [likely consequence]."
+
+DATA TO WATCH
+List 4-5 specific economic indicators that would confirm or invalidate this week's analysis.
+
+Rules:
+- Be specific — name dates, organizations, data series
+- Do NOT use markdown formatting (no asterisks, hashtags, etc.)
+- Write in plain professional English
+- Keep it concise — maximum 400 words total"""
+
+        return self._safe_chat(
+            model=NvidiaModels.SYNTHESIZER,
+            prompt=prompt,
+            fallback="Forward watchlist unavailable.",
+            max_tokens=768,
+            temperature=0.3,
+            credit_cost=2
+        )
+
+    # =====================================================================
+    # NEW SYNTHESIS: RISK ASSESSMENT (WEF Global Risks-inspired)
+    # =====================================================================
+
+    def generate_risk_assessment(self, articles: list) -> str:
+        """Generate a risk assessment with radar table and narrative."""
+        article_context = "\n".join([
+            f"- [{a.source}] {a.title}: {(a.ai_summary or '')[:120]}"
+            for a in sorted(articles, key=lambda x: x.importance_score, reverse=True)[:20]
+        ])
+
+        prompt = f"""You are a Chief Risk Officer writing a weekly risk assessment for institutional investors.
+
+Based on this week's intelligence:
+{article_context}
+
+Write a risk assessment with these parts:
+
+OVERALL ASSESSMENT
+One sentence: the overall risk posture this week (e.g., "Cautiously optimistic with elevated tail risks from trade policy uncertainty").
+
+RISK RADAR
+List the top 6-8 risks in this format:
+[Risk name] | [Severity: Low/Moderate/Elevated/High/Critical] | [Trend: Rising/Stable/Declining] | [Timeframe: Immediate/Short-term/Medium-term/Structural]
+
+NARRATIVE
+2-3 paragraphs explaining why the risk landscape shifted this week compared to recent trends. Name specific events and data points.
+
+Rules:
+- Be specific and opinionated — this is for sophisticated investors
+- Do NOT use markdown formatting (no asterisks, hashtags, etc.)
+- Use pipe separators (|) for the risk radar table
+- Write in plain professional English"""
+
+        return self._safe_chat(
+            model=NvidiaModels.SYNTHESIZER,
+            prompt=prompt,
+            fallback="Risk assessment unavailable.",
+            max_tokens=1024,
+            temperature=0.3,
+            credit_cost=2
+        )

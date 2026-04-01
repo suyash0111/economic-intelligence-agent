@@ -69,18 +69,40 @@ class DocumentGenerator:
         executive_summary: str,
         date_range: str,
         output_path: Path = None,
+        all_articles: list = None,
         tldr_top5: str = "",
         cross_source_synthesis: str = "",
         theme_summary: dict = None,
         sentiment_analysis: str = "",
+        risk_assessment: str = "",
         actionable_implications: str = "",
         geographic_summary: dict = None,
         key_numbers: str = "",
+        forward_watchlist: str = "",
         charts: list = None
     ) -> Path:
-        """Generate a comprehensive Word document report."""
+        """Generate institutional-grade Word document report (WEF/BIS structure)."""
         self.doc = Document()
         self._setup_document()
+
+        # Separate charts by type for inline placement
+        chart_map = {}
+        remaining_charts = []
+        if charts:
+            for title, image_bytes in charts:
+                title_lower = title.lower()
+                if 'economic indicator' in title_lower or 'fred' in title_lower:
+                    chart_map['macro'] = (title, image_bytes)
+                elif 'importance' in title_lower:
+                    chart_map['importance'] = (title, image_bytes)
+                elif 'source coverage' in title_lower or 'articles per' in title_lower:
+                    chart_map['sources'] = (title, image_bytes)
+                elif 'topic' in title_lower or 'distribution' in title_lower:
+                    chart_map['topics'] = (title, image_bytes)
+                elif 'cross-source' in title_lower or 'stacked' in title_lower:
+                    chart_map['cross_source'] = (title, image_bytes)
+                else:
+                    remaining_charts.append((title, image_bytes))
 
         # === PAGE 1: Cover ===
         self._add_cover_page(date_range)
@@ -88,68 +110,125 @@ class DocumentGenerator:
         # === PAGE 2: Table of Contents ===
         self._add_table_of_contents()
 
-        # === SECTION 1: TL;DR Top 5 ===
+        # === SECTION 1: THIS WEEK AT A GLANCE ===
         if tldr_top5:
-            self._add_section_header("TOP 5 THINGS TO KNOW THIS WEEK", "1")
-            self._add_tldr_content(tldr_top5)
+            self._add_section_header("THIS WEEK AT A GLANCE", "1")
+            self._add_intro_text(
+                "The most consequential economic developments this week, "
+                "ranked by significance across 39 monitored organizations."
+            )
+            self._add_bluf_content(tldr_top5)
             self.doc.add_page_break()
 
-        # === SECTION 2: Key Numbers ===
-        if key_numbers:
-            self._add_section_header("KEY ECONOMIC NUMBERS", "2")
-            self._add_formatted_text(key_numbers)
-
-        # === SECTION 3: Sentiment ===
-        if sentiment_analysis:
-            self._add_section_header("MARKET SENTIMENT", "3")
-            self._add_sentiment_content(sentiment_analysis)
-
-        # === SECTION 4: Executive Summary ===
-        self._add_section_header("EXECUTIVE SUMMARY", "4")
+        # === SECTION 2: EXECUTIVE NARRATIVE (moved up from old section 4) ===
+        self._add_section_header("EXECUTIVE NARRATIVE", "2")
+        self._add_intro_text(
+            "A connected narrative of this week's economic landscape \u2014 "
+            "what happened, why it matters, and what to watch."
+        )
         self._add_formatted_text(executive_summary)
         self.doc.add_page_break()
 
-        # === SECTION 5: Cross-Source Intelligence ===
+        # === SECTION 3: MACROECONOMIC DASHBOARD (numbers + inline charts) ===
+        if key_numbers:
+            self._add_section_header("MACROECONOMIC DASHBOARD", "3")
+            self._add_intro_text(
+                "Key economic indicators from the Federal Reserve Economic Data (FRED) "
+                "and AI-extracted statistics from this week's reports."
+            )
+            self._add_formatted_text(key_numbers)
+            if 'macro' in chart_map:
+                self._add_inline_chart(*chart_map['macro'], "Key US/Global Economic Indicators")
+            if 'importance' in chart_map:
+                self._add_inline_chart(*chart_map['importance'], "Intelligence Importance Distribution")
+
+        # === SECTION 4: RISK & SENTIMENT ASSESSMENT ===
+        if risk_assessment or sentiment_analysis:
+            self._add_section_header("RISK & SENTIMENT ASSESSMENT", "4")
+            self._add_intro_text(
+                "Multi-horizon risk radar and market sentiment analysis "
+                "based on cross-source signal aggregation."
+            )
+            if risk_assessment:
+                self._add_formatted_text(risk_assessment)
+            if sentiment_analysis:
+                self._add_sentiment_content(sentiment_analysis)
+            self.doc.add_page_break()
+
+        # === SECTION 5: CROSS-SOURCE INTELLIGENCE ===
         if cross_source_synthesis:
             self._add_section_header("CROSS-SOURCE INTELLIGENCE", "5")
-            self._add_intro_text("Analysis of consensus and divergent views across organizations.")
+            self._add_intro_text(
+                "Consensus, divergence, and blind spots across 39 organizations. "
+                "This section identifies what sources agree on, where they disagree, "
+                "and what nobody is covering."
+            )
             self._add_formatted_text(cross_source_synthesis)
+            if 'sources' in chart_map:
+                self._add_inline_chart(*chart_map['sources'], "Intelligence Source Coverage")
+            if 'cross_source' in chart_map:
+                self._add_inline_chart(*chart_map['cross_source'], "Cross-Source Topic Coverage")
 
-        # === SECTION 6: Actionable Implications ===
+        # === SECTION 6: THEMATIC DEEP-DIVES ===
+        if theme_summary:
+            self._add_section_header("THEMATIC DEEP-DIVES", "6")
+            self._add_intro_text(
+                "In-depth analysis of the week's dominant economic themes, "
+                "modeled on BIS Quarterly Review analytical approach."
+            )
+            self._add_theme_content(theme_summary)
+            if 'topics' in chart_map:
+                self._add_inline_chart(*chart_map['topics'], "Topic Distribution Across Sources")
+            self.doc.add_page_break()
+
+        # === SECTION 7: REGIONAL OUTLOOK ===
+        if geographic_summary:
+            self._add_section_header("REGIONAL OUTLOOK", "7")
+            self._add_intro_text(
+                "Geographic breakdown of economic developments, "
+                "organized by major economic region."
+            )
+            self._add_geographic_content(geographic_summary)
+
+        # === SECTION 8: STRATEGIC IMPLICATIONS ===
         if actionable_implications:
-            self._add_section_header("ACTIONABLE IMPLICATIONS", "6")
-            self._add_intro_text("Practical considerations for key stakeholders.")
+            self._add_section_header("STRATEGIC IMPLICATIONS", "8")
+            self._add_intro_text(
+                "Practical considerations for policymakers, investors, and businesses. "
+                "The 'So What?' of this week's intelligence."
+            )
             self._add_formatted_text(actionable_implications)
             self.doc.add_page_break()
 
-        # === SECTION 7: Geographic Breakdown ===
-        if geographic_summary:
-            self._add_section_header("REGIONAL BREAKDOWN", "7")
-            self._add_geographic_content(geographic_summary)
-
-        # === SECTION 8: Thematic Overview ===
-        if theme_summary:
-            self._add_section_header("THEMATIC OVERVIEW", "8")
-            self._add_theme_content(theme_summary)
-            self.doc.add_page_break()
-
-        # === SECTION 9: Economic Dashboard (Auto-Generated Charts) ===
-        if charts:
-            self._add_section_header("ECONOMIC DASHBOARD", "9")
+        # === SECTION 9: FORWARD WATCHLIST (NEW) ===
+        if forward_watchlist:
+            self._add_section_header("FORWARD WATCHLIST", "9")
             self._add_intro_text(
-                "Professional charts generated from extracted report data, "
-                "statistics, and FRED economic indicators."
+                "Key events, data releases, and conditional scenarios to monitor "
+                "in the coming week."
             )
-            self._add_charts_section(charts)
+            self._add_formatted_text(forward_watchlist)
             self.doc.add_page_break()
 
-        # === DETAILED COVERAGE BY ORGANIZATION ===
-        orgs_by_category = self._group_by_category(articles_by_org)
-        section_num = 10 if charts else 9
-        for category in self._get_category_order():
-            if category in orgs_by_category:
-                self._add_category_section(category, orgs_by_category[category], str(section_num))
-                section_num += 1
+        # === SECTION 10: DETAILED INTELLIGENCE BY SECTOR ===
+        self._add_section_header("DETAILED INTELLIGENCE BY SECTOR", "10")
+        self._add_intro_text(
+            "Comprehensive coverage organized by economic sector. "
+            "Articles with multi-pass deep verification are marked."
+        )
+        self._add_sector_intelligence(articles_by_org, all_articles or [])
+
+        # === APPENDIX A: METHODOLOGY & DATA SOURCES ===
+        self.doc.add_page_break()
+        self._add_section_header("APPENDIX A: METHODOLOGY & DATA SOURCES", "A")
+        self._add_methodology_appendix(articles_by_org, all_articles or [])
+
+        # === APPENDIX B: COMPLETE CHARTS ===
+        if remaining_charts:
+            self.doc.add_page_break()
+            self._add_section_header("APPENDIX B: ECONOMIC DASHBOARD", "B")
+            self._add_intro_text("Complete set of auto-generated analytical charts.")
+            self._add_charts_section(remaining_charts)
 
         # Save
         if output_path is None:
@@ -308,6 +387,16 @@ class DocumentGenerator:
         run.font.size = Pt(9)
         run.font.italic = True
         run.font.color.rgb = LIGHT_GREY
+        run.font.name = FONT_FAMILY
+
+        # Tagline
+        tagline = self.doc.add_paragraph()
+        tagline.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        tagline.paragraph_format.space_before = Pt(8)
+        run2 = tagline.add_run("360-Degree Analysis of Global Economic Developments")
+        run2.font.size = Pt(9)
+        run2.font.color.rgb = GREY_TEXT
+        run2.font.name = FONT_FAMILY
 
         self.doc.add_page_break()
 
@@ -1159,7 +1248,262 @@ class DocumentGenerator:
 
             except Exception as e:
                 logger.warning(f"Could not embed chart '{title}': {e}")
-                # Add text fallback
                 p = self.doc.add_paragraph()
                 run = p.add_run(f"[Chart: {title} - could not be embedded]")
                 run.font.color.rgb = GREY_TEXT
+
+    # =====================================================================
+    # WEF BLUF CONTENT (Bold-Lead Bullet Format)
+    # =====================================================================
+
+    def _add_bluf_content(self, text: str):
+        """
+        Render BLUF content with bold lead phrases.
+        Detects patterns like "Bold headline. Explanation text" and
+        makes the headline bold.
+        """
+        lines = [l.strip() for l in text.strip().split('\n') if l.strip()]
+
+        for line in lines:
+            # Strip numbering (1. 2. 3. or - or *)
+            clean = line.lstrip('0123456789.-*) ').strip()
+            if not clean:
+                continue
+
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(8)
+            p.paragraph_format.left_indent = Inches(0.2)
+
+            # Try to split on first period to make bold lead
+            period_idx = clean.find('. ')
+            if period_idx > 0 and period_idx < 80:
+                headline = clean[:period_idx + 1]
+                explanation = clean[period_idx + 2:]
+
+                run_bold = p.add_run(headline + " ")
+                run_bold.font.bold = True
+                run_bold.font.size = BODY_SIZE
+                run_bold.font.name = FONT_FAMILY
+                run_bold.font.color.rgb = NAVY
+
+                if explanation:
+                    run_text = p.add_run(explanation)
+                    run_text.font.size = BODY_SIZE
+                    run_text.font.name = FONT_FAMILY
+                    run_text.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+            else:
+                run = p.add_run(clean)
+                run.font.size = BODY_SIZE
+                run.font.name = FONT_FAMILY
+
+    # =====================================================================
+    # INLINE CHART EMBEDDING
+    # =====================================================================
+
+    def _add_inline_chart(self, title: str, image_bytes: bytes, caption_text: str):
+        """Embed a single chart inline within a section."""
+        import io
+        try:
+            # Small spacing before chart
+            spacer = self.doc.add_paragraph()
+            spacer.paragraph_format.space_before = Pt(12)
+            spacer.paragraph_format.space_after = Pt(4)
+
+            # Embed image
+            image_stream = io.BytesIO(image_bytes)
+            self.doc.add_picture(image_stream, width=Inches(5.8))
+
+            # Center
+            last_paragraph = self.doc.paragraphs[-1]
+            last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # Caption
+            caption = self.doc.add_paragraph()
+            caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = caption.add_run(caption_text)
+            run.font.size = CAPTION_SIZE
+            run.font.color.rgb = GREY_TEXT
+            run.font.italic = True
+            run.font.name = FONT_FAMILY
+            caption.paragraph_format.space_after = Pt(16)
+
+        except Exception as e:
+            logger.warning(f"Could not embed inline chart '{title}': {e}")
+
+    # =====================================================================
+    # SECTOR-BASED INTELLIGENCE (replaces org-based)
+    # =====================================================================
+
+    SECTOR_MAPPING = {
+        'Central Banking & Monetary Policy': [
+            'monetary policy', 'interest rate', 'central bank', 'repo rate',
+            'fed', 'ecb', 'fomc', 'mpc', 'quantitative', 'rate decision'
+        ],
+        'Fiscal Policy & Government Finance': [
+            'budget', 'fiscal', 'government spending', 'taxation', 'deficit', 'debt'
+        ],
+        'Trade & Commerce': [
+            'trade', 'tariff', 'export', 'import', 'wto', 'trade war',
+            'protectionism', 'commerce', 'supply chain'
+        ],
+        'Labor Markets & Employment': [
+            'employment', 'unemployment', 'jobs', 'labor', 'wage', 'workforce',
+            'skills', 'hiring'
+        ],
+        'Energy & Commodities': [
+            'energy', 'oil', 'gas', 'commodity', 'opec', 'renewable', 'fossil'
+        ],
+        'Technology & Digital Economy': [
+            'technology', 'digital', 'ai', 'fintech', 'cryptocurrency',
+            'blockchain', 'innovation', 'data'
+        ],
+        'Financial Markets & Banking': [
+            'financial stability', 'banking', 'stock', 'equity', 'bond',
+            'yield', 'credit', 'market', 'investment'
+        ],
+        'Climate & Sustainability': [
+            'climate', 'esg', 'sustainable', 'green', 'carbon', 'net zero',
+            'environment', 'transition'
+        ],
+    }
+
+    def _add_sector_intelligence(self, articles_by_org: dict, all_articles: list):
+        """Group articles by economic sector instead of by organization."""
+        # Build sector buckets
+        sector_articles = {sector: [] for sector in self.SECTOR_MAPPING}
+        sector_articles['General Economic'] = []
+
+        for article in all_articles:
+            combined = f"{article.title} {article.summary or ''}".lower()
+            placed = False
+            for sector, keywords in self.SECTOR_MAPPING.items():
+                if any(kw in combined for kw in keywords):
+                    sector_articles[sector].append(article)
+                    placed = True
+                    break
+            if not placed:
+                sector_articles['General Economic'].append(article)
+
+        # Render each sector with articles
+        sub_num = 1
+        for sector, articles in sector_articles.items():
+            if not articles:
+                continue
+
+            # Sector sub-heading
+            h = self.doc.add_heading(f"10.{sub_num} {sector}", level=2)
+            for run in h.runs:
+                run.font.color.rgb = ACCENT_BLUE
+                run.font.name = FONT_FAMILY
+
+            count_text = self.doc.add_paragraph()
+            run = count_text.add_run(f"{len(articles)} articles in this sector")
+            run.font.size = SMALL_SIZE
+            run.font.color.rgb = GREY_TEXT
+            run.font.italic = True
+            run.font.name = FONT_FAMILY
+
+            # Sort by importance
+            sorted_arts = sorted(articles, key=lambda x: x.importance_score, reverse=True)
+
+            for article in sorted_arts[:12]:  # Cap at 12 per sector
+                # Article entry
+                p = self.doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(8)
+
+                # Source badge
+                src_run = p.add_run(f"[{article.source}] ")
+                src_run.font.bold = True
+                src_run.font.size = SMALL_SIZE
+                src_run.font.color.rgb = ACCENT_BLUE
+                src_run.font.name = FONT_FAMILY
+
+                # Title
+                title_run = p.add_run(article.title)
+                title_run.font.bold = True
+                title_run.font.size = BODY_SIZE
+                title_run.font.name = FONT_FAMILY
+
+                # Importance badge
+                level = "CRITICAL" if article.importance_score >= 8 else "IMPORTANT" if article.importance_score >= 5 else ""
+                if level:
+                    badge_run = p.add_run(f"  [{level}]")
+                    badge_run.font.size = CAPTION_SIZE
+                    badge_run.font.color.rgb = RED if level == "CRITICAL" else ORANGE
+                    badge_run.font.name = FONT_FAMILY
+
+                # Summary
+                if article.ai_summary:
+                    sum_p = self.doc.add_paragraph()
+                    sum_p.paragraph_format.left_indent = Inches(0.3)
+                    sum_run = sum_p.add_run(article.ai_summary[:500])
+                    sum_run.font.size = SMALL_SIZE
+                    sum_run.font.name = FONT_FAMILY
+                    sum_run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+
+                # Deep analysis (if multi-pass verified)
+                if hasattr(article, 'deep_analysis') and article.deep_analysis:
+                    deep_p = self.doc.add_paragraph()
+                    deep_p.paragraph_format.left_indent = Inches(0.3)
+                    badge = deep_p.add_run("\u2b50 Deep Verified: ")
+                    badge.font.bold = True
+                    badge.font.size = SMALL_SIZE
+                    badge.font.color.rgb = GREEN
+                    badge.font.name = FONT_FAMILY
+                    analysis_run = deep_p.add_run(article.deep_analysis[:400])
+                    analysis_run.font.size = SMALL_SIZE
+                    analysis_run.font.name = FONT_FAMILY
+
+            sub_num += 1
+
+    # =====================================================================
+    # APPENDIX A: METHODOLOGY
+    # =====================================================================
+
+    def _add_methodology_appendix(self, articles_by_org: dict, all_articles: list):
+        """Add transparency appendix with methodology and data sources."""
+        total_articles = len(all_articles)
+        total_orgs = len(articles_by_org)
+
+        # Methodology paragraph
+        self._add_formatted_text(
+            f"This report was generated by the Global Pulse Economic Intelligence Agent, "
+            f"an automated system that monitors {total_orgs} leading economic organizations worldwide. "
+            f"A total of {total_articles} articles were collected, deduplicated, and analyzed "
+            f"using a multi-model AI architecture."
+        )
+
+        # AI Architecture
+        h = self.doc.add_heading("AI Architecture", level=2)
+        for run in h.runs:
+            run.font.color.rgb = DARK_BLUE
+            run.font.name = FONT_FAMILY
+
+        arch_items = [
+            "Primary Analysis: NVIDIA NIM (Qwen 2.5 72B, DeepSeek V3.1, Kimi K2)",
+            "Deduplication: NV-Embed-V1 semantic embeddings",
+            "Ranking: NV-RerankQA-Mistral-4B",
+            "Fallback Chain: Groq \u2192 Cerebras \u2192 OpenRouter (auto-triggered on credit exhaustion)",
+        ]
+        for item in arch_items:
+            p = self.doc.add_paragraph(item, style='List Bullet')
+            for run in p.runs:
+                run.font.size = SMALL_SIZE
+                run.font.name = FONT_FAMILY
+
+        # Organizations Monitored
+        h2 = self.doc.add_heading("Organizations Monitored", level=2)
+        for run in h2.runs:
+            run.font.color.rgb = DARK_BLUE
+            run.font.name = FONT_FAMILY
+
+        org_list = sorted(articles_by_org.keys())
+        # Create 3-column layout text
+        for i in range(0, len(org_list), 3):
+            row = org_list[i:i+3]
+            p = self.doc.add_paragraph()
+            run = p.add_run("  |  ".join(row))
+            run.font.size = CAPTION_SIZE
+            run.font.name = FONT_FAMILY
+            run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)

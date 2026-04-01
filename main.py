@@ -118,6 +118,8 @@ def run_agent(
         key_numbers = ""
         executive_summary = ""
         indicators = {}
+        forward_watchlist = ""
+        risk_assessment = ""
         analyzed_articles = all_articles
 
         # Check for NVIDIA API key
@@ -262,6 +264,12 @@ def run_agent(
                 geographic = analyzer.generate_geographic_summary(analyzed_articles)
                 logger.info("[OK] Generated geographic breakdown")
 
+                forward_watchlist = analyzer.generate_forward_watchlist(analyzed_articles, date_range)
+                logger.info("[OK] Generated forward watchlist")
+
+                risk_assessment = analyzer.generate_risk_assessment(analyzed_articles)
+                logger.info("[OK] Generated risk assessment")
+
                 # Final status
                 logger.info(f"[NVIDIA] ═══ FINAL STATUS ═══")
                 logger.info(f"[NVIDIA] Total API calls: {analyzer.total_api_calls}")
@@ -304,15 +312,18 @@ def run_agent(
         doc_generator = DocumentGenerator()
         doc_path = doc_generator.generate(
             articles_by_org=articles_by_org,
+            all_articles=analyzed_articles,
             executive_summary=executive_summary,
             date_range=date_range,
             tldr_top5=tldr_top5,
             cross_source_synthesis=cross_source,
             theme_summary=theme_summary,
             sentiment_analysis=sentiment,
+            risk_assessment=risk_assessment,
             actionable_implications=implications,
             geographic_summary=geographic,
             key_numbers=key_numbers,
+            forward_watchlist=forward_watchlist,
             charts=charts
         )
         logger.info(f"[OK] Word document: {doc_path}")

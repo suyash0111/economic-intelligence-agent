@@ -168,12 +168,13 @@ def run_agent(
                 logger.info("[NVIDIA]   🟢 Qwen 2.5 72B → executive summaries")
                 logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → deep analysis (major reports)")
                 logger.info("[NVIDIA]   🟡 Kimi K2 → strategic assessment (top 5)")
-                if analyzer.groq_client:
-                    logger.info("[NVIDIA]   🔄 Groq Llama 3.3 70B → fallback if credits exhaust")
+                if analyzer.fallback_providers:
+                    fb_names = ', '.join(p['name'] for p in analyzer.fallback_providers)
+                    logger.info(f"[NVIDIA]   🔄 Fallback chain: {fb_names}")
                 analyzed_articles = analyzer.analyze_batch(enriched_articles)
 
-                if analyzer.quota_exhausted and not analyzer.groq_client:
-                    logger.warning("[NVIDIA] Credits exhausted during article analysis (no Groq fallback)")
+                if analyzer.quota_exhausted and not analyzer.fallback_providers:
+                    logger.warning("[NVIDIA] Credits exhausted during article analysis (no fallback available)")
                     logger.info(f"[NVIDIA] Success: {analyzer.successful_requests}, Failed: {analyzer.failed_requests}")
                 elif analyzer.using_fallback:
                     fb_summary = ', '.join(f"{p['name']}:{p['calls']}" for p in analyzer.fallback_providers if p['calls'] > 0)

@@ -409,15 +409,18 @@ class DocumentGenerator:
         h = self.doc.add_heading("TABLE OF CONTENTS", level=1)
 
         toc_items = [
-            ("1.", "Top 5 Things to Know This Week"),
-            ("2.", "Key Economic Numbers"),
-            ("3.", "Market Sentiment"),
-            ("4.", "Executive Summary"),
+            ("1.", "This Week at a Glance"),
+            ("2.", "Executive Narrative"),
+            ("3.", "Macroeconomic Dashboard"),
+            ("4.", "Risk & Sentiment Assessment"),
             ("5.", "Cross-Source Intelligence"),
-            ("6.", "Actionable Implications"),
-            ("7.", "Regional Breakdown"),
-            ("8.", "Thematic Overview"),
-            ("9+", "Detailed Coverage by Organization"),
+            ("6.", "Thematic Deep-Dives"),
+            ("7.", "Regional Outlook"),
+            ("8.", "Strategic Implications"),
+            ("9.", "Forward Watchlist"),
+            ("10.", "Detailed Intelligence by Sector"),
+            ("A.", "Methodology & Data Sources"),
+            ("B.", "Economic Dashboard (Charts)"),
         ]
 
         for num, title in toc_items:

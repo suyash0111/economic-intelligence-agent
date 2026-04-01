@@ -18,10 +18,8 @@ class Settings:
 
     # API Keys
     NVIDIA_API_KEY: str = os.getenv('NVIDIA_API_KEY', '')
-    GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')  # Fallback 1
-    CEREBRAS_API_KEY: str = os.getenv('CEREBRAS_API_KEY', '')  # Fallback 2
-    OPENROUTER_API_KEY: str = os.getenv('OPENROUTER_API_KEY', '')  # Fallback 3
     GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')  # Legacy fallback
+    OPENROUTER_API_KEY: str = os.getenv('OPENROUTER_API_KEY', '')
 
     # Email Configuration
     EMAIL_ADDRESS: str = os.getenv('EMAIL_ADDRESS', '')

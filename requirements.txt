@@ -11,10 +11,6 @@ openai>=1.30.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 
-# Chart generation
-matplotlib>=3.8.0
-numpy>=1.26.0
-
 # PDF extraction and analysis
 pymupdf>=1.24.0
 pdfplumber>=0.10.0

@@ -1,15 +1,14 @@
 """
-NVIDIA NIM Multi-Model Analyzer - 6-Model Architecture for World-Class Economic Intelligence.
+NVIDIA NIM Multi-Model Analyzer - 7-Model Architecture for World-Class Economic Intelligence.
 
 Models:
-  1. Qwen 2.5 72B Instruct - Executive summaries & short analysis
+  1. Mistral Small 3.1 (24B) - Quick article summaries
   2. DeepSeek V3.1 Terminus - Deep analysis & reasoning
-  3. Rerank QA Mistral - Article relevance ranking
-  4. NV-Embed-V1 - Embeddings for dedup & clustering
-  5. Kimi K2 Instruct - Long-context final synthesis
-
-Fallback: Groq API (Llama 3.3 70B) when NVIDIA credits exhaust
-Chart Analysis: Text-based interpretation (no vision model needed)
+  3. Llama 4 Maverick - Vision/chart analysis
+  4. Rerank QA Mistral - Article relevance ranking
+  5. NV-Embed-V1 - Embeddings for dedup & clustering
+  6. OCDRNet - OCR for scanned PDFs
+  7. Kimi K2 Instruct - Long-context final synthesis
 """
 
 import logging
@@ -33,101 +32,39 @@ logger = logging.getLogger(__name__)
 
 class NvidiaModels:
     """NVIDIA NIM model identifiers."""
-    SUMMARIZER = "qwen/qwen2.5-72b-instruct"
-    DEEP_ANALYZER = "qwen/qwen2.5-72b-instruct"  # DeepSeek V3.x returns 404 on free tier
+    SUMMARIZER = "mistralai/mistral-small-3.1-24b-instruct-2503"
+    DEEP_ANALYZER = "deepseek-ai/deepseek-v3.1-terminus"
+    VISION = "meta/llama-4-maverick-17b-128e-instruct"
     RERANKER = "nvidia/nv-rerankqa-mistral-4b-v3"
     EMBEDDER = "nvidia/nv-embed-v1"
+    OCR = "nvidia/ocdrnet"
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"
 
     BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 
-class GroqModels:
-    """Groq API — Fallback 1."""
-    MODEL = "llama-3.3-70b-versatile"
-    BASE_URL = "https://api.groq.com/openai/v1"
-
-
-class CerebrasModels:
-    """Cerebras API — Fallback 2 (fastest inference)."""
-    MODEL = "llama-3.3-70b"
-    BASE_URL = "https://api.cerebras.ai/v1"
-
-
-class OpenRouterModels:
-    """OpenRouter API — Fallback 3 (widest model selection)."""
-    SUMMARIZER = "meta-llama/llama-3.3-70b-instruct:free"
-    ANALYZER = "nousresearch/hermes-3-llama-3.1-405b:free"
-    BASE_URL = "https://openrouter.ai/api/v1"
-
-
 class NvidiaAnalyzer:
     """
-    AI-powered content analyzer using NVIDIA NIM + 3-provider fallback chain.
-    NVIDIA NIM → Groq → Cerebras → OpenRouter
+    AI-powered content analyzer using NVIDIA NIM's 7-model architecture.
+    Drop-in replacement for GeminiAnalyzer with the same public API.
     """
 
     def __init__(self):
-        """Initialize the NVIDIA NIM analyzer with 3-provider fallback chain."""
+        """Initialize the NVIDIA NIM analyzer with all model clients."""
         if not Settings.NVIDIA_API_KEY:
             raise ValueError("NVIDIA_API_KEY not set in environment")
 
-        # Primary: NVIDIA NIM client
+        # Single OpenAI-compatible client for all chat/completion models
         self.client = OpenAI(
             base_url=NvidiaModels.BASE_URL,
             api_key=Settings.NVIDIA_API_KEY
         )
 
-        # Build fallback chain: Groq → Cerebras → OpenRouter
-        self.fallback_providers = []
-        self.using_fallback = False
-        self.active_fallback_name = None
-
-        if Settings.GROQ_API_KEY:
-            self.fallback_providers.append({
-                'name': 'Groq',
-                'client': OpenAI(base_url=GroqModels.BASE_URL, api_key=Settings.GROQ_API_KEY),
-                'model': GroqModels.MODEL,
-                'delay': 2.0,
-                'calls': 0,
-                'failed': False,
-            })
-            logger.info("  ✅ Fallback 1: Groq (Llama 3.3 70B)")
-
-        if Settings.CEREBRAS_API_KEY:
-            self.fallback_providers.append({
-                'name': 'Cerebras',
-                'client': OpenAI(base_url=CerebrasModels.BASE_URL, api_key=Settings.CEREBRAS_API_KEY),
-                'model': CerebrasModels.MODEL,
-                'delay': 1.0,  # Cerebras is very fast
-                'calls': 0,
-                'failed': False,
-            })
-            logger.info("  ✅ Fallback 2: Cerebras (Llama 3.3 70B)")
-
-        if Settings.OPENROUTER_API_KEY:
-            self.fallback_providers.append({
-                'name': 'OpenRouter',
-                'client': OpenAI(
-                    base_url=OpenRouterModels.BASE_URL,
-                    api_key=Settings.OPENROUTER_API_KEY,
-                    default_headers={'HTTP-Referer': 'https://github.com/suyash0111/economic-intelligence-agent'}
-                ),
-                'model': OpenRouterModels.SUMMARIZER,
-                'delay': 3.0,  # OpenRouter free has lower rate limits
-                'calls': 0,
-                'failed': False,
-            })
-            logger.info("  ✅ Fallback 3: OpenRouter (Hermes 405B / Llama 70B)")
-
-        if not self.fallback_providers:
-            logger.warning("  ⚠️ No fallback providers configured!")
-
-        # Rate limiting
+        # Rate limiting - NVIDIA allows ~40 RPM, we use 30 to be safe
         self.requests_per_minute = 30
         self.request_count = 0
         self.last_reset = time.time()
-        self.min_delay_between_requests = 2.0
+        self.min_delay_between_requests = 2.0  # 2s between calls (vs 4s for Gemini)
         self.last_request_time = 0
 
         # Credit tracking
@@ -135,19 +72,19 @@ class NvidiaAnalyzer:
         self.successful_requests = 0
         self.failed_requests = 0
         self.credits_estimate = 0
-        self.fallback_calls = 0
 
         # Quota exhaustion detection
         self.consecutive_errors = 0
         self.max_consecutive_errors = 5
         self.quota_exhausted = False
 
-        fb_count = len(self.fallback_providers)
-        logger.info(f"NVIDIA NIM Analyzer initialized (5 models + {fb_count} fallback providers)")
+        logger.info(f"NVIDIA NIM Analyzer initialized with 7-model architecture")
         logger.info(f"  🟢 Summarizer:  {NvidiaModels.SUMMARIZER}")
         logger.info(f"  🔵 Analyzer:    {NvidiaModels.DEEP_ANALYZER}")
+        logger.info(f"  🟣 Vision:      {NvidiaModels.VISION}")
         logger.info(f"  🟠 Reranker:    {NvidiaModels.RERANKER}")
         logger.info(f"  🧬 Embedder:    {NvidiaModels.EMBEDDER}")
+        logger.info(f"  🔴 OCR:         {NvidiaModels.OCR}")
         logger.info(f"  🟡 Synthesizer: {NvidiaModels.SYNTHESIZER}")
 
     # =====================================================================
@@ -243,81 +180,21 @@ class NvidiaAnalyzer:
                    max_tokens: int = 1024, temperature: float = 0.3,
                    system_prompt: str = None, credit_cost: int = 1,
                    max_retries: int = 2) -> str:
-        """
-        Safely make a chat call with retry + 4-provider fallback chain.
-        NVIDIA NIM → Groq → Cerebras → OpenRouter → fallback text
-        """
-        # Try NVIDIA NIM first
-        if not self.quota_exhausted:
-            for attempt in range(max_retries):
-                try:
-                    can_proceed = self._check_rate_limit()
-                    if not can_proceed:
-                        break  # Fall through to fallback chain
-
-                    result = self._chat(model, prompt, max_tokens, temperature, system_prompt)
-                    self._mark_success(credit_cost)
-                    return result
-                except Exception as e:
-                    should_retry = self._handle_api_error(e)
-                    if not should_retry or self.quota_exhausted:
-                        break  # Fall through to fallback chain
-
-        # Cascade through fallback providers
-        if self.quota_exhausted or self.using_fallback:
-            self.using_fallback = True
-            result = self._fallback_chat(prompt, max_tokens, temperature)
-            if result:
-                return result
-
-        return fallback
-
-    def _fallback_chat(self, prompt: str, max_tokens: int = 1024,
-                       temperature: float = 0.3) -> str:
-        """
-        Try each fallback provider in sequence until one succeeds.
-        Groq → Cerebras → OpenRouter
-        """
-        for provider in self.fallback_providers:
-            if provider['failed']:
-                continue  # Skip providers that have permanently failed
-
+        """Safely make a chat call with retry and fallback."""
+        for attempt in range(max_retries):
             try:
-                time.sleep(provider['delay'])
+                can_proceed = self._check_rate_limit()
+                if not can_proceed:
+                    return fallback
 
-                response = provider['client'].chat.completions.create(
-                    model=provider['model'],
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    stream=False
-                )
-
-                provider['calls'] += 1
-                self.fallback_calls += 1
-                self.active_fallback_name = provider['name']
-                result = response.choices[0].message.content.strip()
-
-                if self.fallback_calls % 10 == 0:
-                    summary = ', '.join(f"{p['name']}:{p['calls']}" for p in self.fallback_providers if p['calls'] > 0)
-                    logger.info(f"[FALLBACK] Active: {summary}")
-
+                result = self._chat(model, prompt, max_tokens, temperature, system_prompt)
+                self._mark_success(credit_cost)
                 return result
-
             except Exception as e:
-                error_str = str(e).lower()
-                # Mark as permanently failed if auth error, otherwise just skip this call
-                if '401' in error_str or '403' in error_str or 'auth' in error_str:
-                    provider['failed'] = True
-                    logger.warning(f"[FALLBACK] {provider['name']} permanently failed (auth): {e}")
-                elif '429' in error_str or 'rate' in error_str:
-                    logger.info(f"[FALLBACK] {provider['name']} rate limited, trying next...")
-                else:
-                    logger.warning(f"[FALLBACK] {provider['name']} failed: {e}")
-                continue  # Try next provider
-
-        logger.warning("[FALLBACK] All providers exhausted")
-        return ""
+                should_retry = self._handle_api_error(e)
+                if not should_retry or self.quota_exhausted:
+                    return fallback
+        return fallback
 
     def _safe_vision_chat(self, prompt: str, image_bytes: bytes,
                           fallback: str = "", max_tokens: int = 512) -> str:
@@ -540,68 +417,22 @@ class NvidiaAnalyzer:
     # ARTICLE ANALYSIS (Models 1 & 2)
     # =====================================================================
 
-    # Patterns that indicate non-economic content (navigation pages, HR, etc.)
-    NON_ECONOMIC_PATTERNS = [
-        'career', 'join us', 'join our team', 'returner programme', 'diversity and inclusion',
-        'why you should join', 'speaker for your school', 'request a speaker',
-        'using images of banknotes', 'damaged and contaminated', 'exchanging old banknotes',
-        'counterfeit banknotes', 'note circulation scheme', 'advice for retailers',
-        'scottish and northern ireland banknotes', 'wholesale cash supervision',
-        'what is monetary policy?', 'benefits of price stability', 'scope of monetary policy',
-        'transmission mechanism', 'medium-term orientation', 'two per cent inflation target',
-        'economic, monetary and financial analysis', 'decisions, statements',
-        'monetary policy strategy', 'asset purchase programmes',
-        'research support programme', 'we value diversity',
-        'cookie policy', 'privacy policy', 'terms of use', 'contact us',
-        'subscribe', 'newsletter', 'about us', 'sitemap',
-    ]
-
-    def _is_economic_content(self, article: Article) -> bool:
-        """Filter out non-economic content like HR pages, navigation links, etc."""
-        title_lower = article.title.lower().strip()
-
-        # Check against non-economic patterns
-        for pattern in self.NON_ECONOMIC_PATTERNS:
-            if pattern in title_lower:
-                return False
-
-        # Very short titles with no economic keywords are suspicious
-        if len(title_lower) < 15:
-            economic_words = ['rate', 'gdp', 'inflation', 'policy', 'growth', 'trade',
-                            'bank', 'economic', 'financial', 'market', 'data', 'report']
-            if not any(w in title_lower for w in economic_words):
-                return False
-
-        return True
-
     def analyze_article(self, article: Article) -> Article:
         """Analyze a single article and populate AI fields."""
         if self.quota_exhausted:
             return self._fallback_analysis(article)
 
-        # Filter out non-economic content (no API calls wasted)
-        if not self._is_economic_content(article):
-            article.ai_summary = ""
-            article.ai_analysis = ""
-            article.ai_category = "Non-Economic"
-            article.importance_score = 0
-            article.importance_level = "Filtered"
-            article.themes = []
-            article.verification_status = "filtered"
-            logger.debug(f"[FILTER] Skipped non-economic: {article.title[:60]}")
-            return article
-
         try:
-            # Generate 3-5 sentence summary using Mistral Small 3.1
+            # Generate summary using fast Mistral Small 3.1
             article.ai_summary = self._safe_chat(
                 model=NvidiaModels.SUMMARIZER,
                 prompt=self._summary_prompt(article),
-                fallback=article.summary[:200] if article.summary else "Summary not available",
-                max_tokens=512,
+                fallback=article.summary[:150] if article.summary else "Summary not available",
+                max_tokens=256,
                 temperature=0.2
             )
 
-            # Full 4-section analysis for major items using DeepSeek V3.1
+            # Deep analysis for major items using DeepSeek V3.1
             if self._is_major_item(article) and not self.quota_exhausted:
                 article.ai_analysis = self._safe_chat(
                     model=NvidiaModels.DEEP_ANALYZER,
@@ -610,15 +441,6 @@ class NvidiaAnalyzer:
                     max_tokens=1024,
                     temperature=0.3,
                     credit_cost=1
-                )
-            # Short 2-paragraph analysis for all other economic articles
-            elif not self.quota_exhausted:
-                article.ai_analysis = self._safe_chat(
-                    model=NvidiaModels.SUMMARIZER,
-                    prompt=self._short_analysis_prompt(article),
-                    fallback="",
-                    max_tokens=512,
-                    temperature=0.3
                 )
 
             # Non-AI methods (keyword-based, no API calls)
@@ -635,163 +457,25 @@ class NvidiaAnalyzer:
         return article
 
     def analyze_batch(self, articles: list[Article], batch_size: int = 10) -> list[Article]:
-        """Analyze multiple articles efficiently, then apply multi-pass to top articles."""
+        """Analyze multiple articles efficiently."""
         analyzed = []
-        filtered_count = 0
         total = len(articles)
 
         for i, article in enumerate(articles):
             analyzed_article = self.analyze_article(article)
-            if analyzed_article.verification_status == "filtered":
-                filtered_count += 1
             analyzed.append(analyzed_article)
 
             if (i + 1) % batch_size == 0:
                 logger.info(f"Analyzed {i + 1}/{total} articles "
-                           f"(filtered: {filtered_count}, credits: ~{self.credits_estimate}, calls: {self.total_api_calls})")
+                           f"(credits: ~{self.credits_estimate}, calls: {self.total_api_calls})")
                 time.sleep(1)
 
-        logger.info(f"Single-pass complete: {len(analyzed)} articles ({filtered_count} filtered), ~{self.credits_estimate} credits")
-
-        # Multi-pass analysis for top 5 most important articles
-        if not self.quota_exhausted or self.fallback_providers:
-            analyzed = self._apply_multi_pass(analyzed)
-
-        logger.info(f"Analysis complete: {len(analyzed)} articles, ~{self.credits_estimate} credits, {self.fallback_calls} fallback calls")
+        logger.info(f"Analysis complete: {len(analyzed)} articles, ~{self.credits_estimate} credits used")
         return analyzed
-
-    def _apply_multi_pass(self, articles: list[Article], top_n: int = 5) -> list[Article]:
-        """
-        Apply 3-pass analysis to the top N articles by importance score.
-        Pass 1: Extract key facts & numbers (Qwen 72B)
-        Pass 2: Cross-reference with other articles (DeepSeek V3.1)
-        Pass 3: Generate strategic assessment (Kimi K2)
-        """
-        # Sort by importance and select top N that have analysis content
-        candidates = [
-            a for a in articles
-            if a.ai_analysis and a.verification_status not in ('filtered', 'unverified')
-            and a.importance_score >= 6
-        ]
-        candidates.sort(key=lambda a: a.importance_score, reverse=True)
-        top_articles = candidates[:top_n]
-
-        if not top_articles:
-            return articles
-
-        logger.info(f"[MULTI-PASS] Enhancing top {len(top_articles)} articles with 3-pass analysis...")
-
-        # Collect all summaries for cross-referencing context
-        all_summaries = "\n".join([
-            f"- {a.source}: {a.title} — {(a.ai_summary or '')[:150]}"
-            for a in articles
-            if a.ai_summary and a.verification_status != 'filtered'
-        ][:20])  # Top 20 summaries as context
-
-        for idx, article in enumerate(top_articles):
-            logger.info(f"[MULTI-PASS] ({idx+1}/{len(top_articles)}) {article.title[:50]}...")
-
-            # Get article's full text for deeper analysis
-            full_text = article.content_preview or article.summary or ''
-
-            # === PASS 1: FACT EXTRACTION (Qwen 72B) ===
-            facts = self._safe_chat(
-                model=NvidiaModels.SUMMARIZER,
-                prompt=f"""Extract every concrete fact, number, date, and data point from this article.
-
-TITLE: {article.title}
-SOURCE: {article.source_full}
-TEXT: {full_text[:3000]}
-EXISTING ANALYSIS: {(article.ai_analysis or '')[:1000]}
-
-List every factual claim as a bullet point. Include:
-- Specific numbers (percentages, dollar amounts, growth rates)
-- Named entities (people, organizations, countries)
-- Dates and timelines
-- Policy decisions or announcements
-- Comparisons with previous periods
-
-Do NOT editorialize. Only state facts found in the text.
-Write in plain text without markdown formatting.""",
-                fallback="",
-                max_tokens=512,
-                temperature=0.1
-            )
-
-            if not facts:
-                continue
-
-            # === PASS 2: CROSS-REFERENCE (DeepSeek V3.1) ===
-            cross_ref = self._safe_chat(
-                model=NvidiaModels.DEEP_ANALYZER,
-                prompt=f"""You are a senior economic analyst cross-referencing intelligence reports.
-
-ARTICLE BEING ANALYZED:
-Title: {article.title}
-Source: {article.source_full}
-Facts extracted: {facts[:1500]}
-
-OTHER REPORTS THIS WEEK:
-{all_summaries}
-
-Cross-reference this article with the other reports above and answer:
-1. CORROBORATION: Which other reports support or confirm the findings in this article?
-2. CONTRADICTIONS: Do any other reports present conflicting data?
-3. BLIND SPOTS: What important context or data is missing from this article that other reports cover?
-4. INTERCONNECTIONS: How does this article connect to broader economic trends visible across multiple reports?
-
-Write 3-4 paragraphs. Be specific — name the sources and data points.
-Do NOT use markdown formatting. Write in plain professional English.""",
-                fallback="",
-                max_tokens=768,
-                temperature=0.3,
-                credit_cost=2
-            )
-
-            # === PASS 3: STRATEGIC ASSESSMENT (Kimi K2 or DeepSeek) ===
-            assessment = self._safe_chat(
-                model=NvidiaModels.SYNTHESIZER if not self.quota_exhausted else NvidiaModels.DEEP_ANALYZER,
-                prompt=f"""You are the Chief Economist writing a strategic assessment for institutional investors.
-
-ARTICLE: {article.title} ({article.source_full})
-
-VERIFIED FACTS:
-{facts[:1000]}
-
-CROSS-REFERENCE ANALYSIS:
-{(cross_ref or 'No cross-reference available')[:1000]}
-
-Write a strategic assessment covering:
-1. INVESTMENT IMPLICATIONS: What does this mean for asset allocation, sectors, and risk?
-2. POLICY TRAJECTORY: Where is this heading in the next 3-6 months?
-3. SECOND-ORDER EFFECTS: What indirect consequences will ripple through the economy?
-4. ACTIONABLE INTELLIGENCE: What should decision-makers do differently based on this?
-
-Write 3-4 concise paragraphs. This is for sophisticated readers — be specific and opinionated.
-Do NOT use markdown formatting. Write in plain professional English.""",
-                fallback="",
-                max_tokens=768,
-                temperature=0.4,
-                credit_cost=2
-            )
-
-            # Combine all passes into enhanced analysis
-            if cross_ref or assessment:
-                enhanced = article.ai_analysis or ""
-                if cross_ref:
-                    enhanced += "\n\nCROSS-SOURCE INTELLIGENCE\n" + cross_ref
-                if assessment:
-                    enhanced += "\n\nSTRATEGIC ASSESSMENT\n" + assessment
-
-                article.ai_analysis = enhanced
-                article.verification_status = "deep_verified"
-                logger.info(f"[MULTI-PASS] Enhanced: {article.title[:40]}... (+{len(cross_ref or '')+len(assessment or '')} chars)")
-
-        return articles
 
     def _fallback_analysis(self, article: Article) -> Article:
         """Provide fallback analysis when credits are exhausted."""
-        article.ai_summary = article.summary[:200] if article.summary else "AI analysis unavailable (credits exhausted)"
+        article.ai_summary = article.summary[:150] if article.summary else "AI analysis unavailable (credits exhausted)"
         article.ai_analysis = ""
         article.ai_category = self._categorize(article)
         article.importance_score = self._calculate_importance(article)
@@ -805,13 +489,9 @@ Do NOT use markdown formatting. Write in plain professional English.""",
     # =====================================================================
 
     def _summary_prompt(self, article: Article) -> str:
-        return f"""Write an executive summary (3-5 sentences, 150-200 words) of this economic/financial content.
-
-Cover these points in your summary:
-1. WHAT: The main announcement, finding, or development
-2. WHY IT MATTERS: The significance for markets, policy, or the broader economy
-3. KEY NUMBERS: Any specific data points, percentages, or figures mentioned
-4. IMPLICATIONS: What this means going forward
+        return f"""Generate a single-sentence summary (max 100 words) of this economic/financial content.
+The summary should capture the key finding or main point.
+Write in a professional but accessible tone suitable for general readers.
 
 Title: {article.title}
 Source: {article.source_full}
@@ -820,24 +500,7 @@ Category: {article.category}
 Content/Description:
 {article.summary or article.content_preview or 'No content available'}
 
-Write a professional but accessible summary. Do NOT use markdown formatting (no **, no ##, no bullet points).
-Do NOT make up numbers — only include data explicitly stated in the content.
-Provide ONLY the summary paragraph, no headers or labels."""
-
-    def _short_analysis_prompt(self, article: Article) -> str:
-        """Shorter analysis for non-major articles (2 paragraphs instead of 4 sections)."""
-        return f"""You are an economic intelligence analyst. Write a brief analysis (2 paragraphs, 100-150 words total) of this article.
-
-Title: {article.title}
-Source: {article.source_full}
-Category: {article.category}
-Content: {article.summary or article.content_preview or 'No content available'}
-
-Paragraph 1: What is the key development and what does it signal for the economy?
-Paragraph 2: What should investors, businesses, or policymakers watch for as a result?
-
-CRITICAL: Do NOT use markdown formatting (no **, ##, ####, or bullet dashes).
-Do NOT invent numbers. Write in plain professional English."""
+Provide ONLY the one-line summary, no other text."""
 
     def _analysis_prompt(self, article: Article) -> str:
         return f"""You are an economic intelligence analyst writing for the "Global Pulse Weekly Report."
@@ -854,32 +517,32 @@ Available Content:
 
 {article.content_preview if article.content_preview else ''}
 
-YOUR TASK: Provide a comprehensive "Major Findings & Analysis" block following this EXACT structure.
-IMPORTANT: Do NOT use markdown hash symbols (##, ###, ####). Use plain text headers like "1. THE NON-OBVIOUS TRUTHS" without any # or ** markers.
+YOUR TASK: Provide a comprehensive "Major Findings & Analysis" block following this structure:
 
-1. THE NON-OBVIOUS TRUTHS
+**1. THE NON-OBVIOUS TRUTHS**
 Don't just report headlines. Extract the underlying shifts, hidden patterns, or counterintuitive findings that a casual reader would miss. What does the data REALLY tell us beyond the press release?
 
-2. MACRO AND MICRO INDICATORS
-Macroeconomic: GDP growth, inflation, employment, trade balance implications.
-Microeconomic: Industry-specific impacts, consumer behavior, business implications.
+**2. MACRO & MICRO INDICATORS**
+- Macroeconomic: GDP growth, inflation, employment, trade balance implications
+- Microeconomic: Industry-specific impacts, consumer behavior, business implications
 
-3. POLICY IMPLICATIONS
+**3. POLICY IMPLICATIONS**
 What does this mean for:
 - Government policy (fiscal, monetary, regulatory)
 - Central bank actions
 - Industry regulations
 
-4. WHY THIS MATTERS
-Explain the real-world impact in plain terms. Use clear analogies for complex concepts.
-Example: "Fiscal deficit is like the nation's credit card balance."
+**4. WHY THIS MATTERS TO YOU**
+Explain the real-world impact in plain terms. Use clear analogies for complex concepts:
+- Example: "Fiscal deficit is like the nation's credit card balance"
+- Example: "Quantitative easing is like the central bank 'printing money' to stimulate the economy"
 
 CRITICAL RULES:
-- Do NOT use markdown formatting: no ** for bold, no ## for headers, no #### anywhere
-- Use plain text with numbered sections (1. 2. 3. 4.) and dashes for sub-points
 - Use "Professional-Layman Mix" tone: Be precise with data but explain jargon simply
-- If specific data points are NOT in the content, say "The full report contains detailed data" - NEVER guess or make up numbers
-- Keep total response under 500 words but be substantive, not generic"""
+- If specific data points are NOT in the content, say "The full report contains detailed data at [source URL]" - NEVER guess or make up numbers
+- Keep total response under 500 words but be substantive, not generic
+- Use bullet points for readability
+- Bold key numbers and findings"""
 
     # =====================================================================
     # MODEL 7: FINAL SYNTHESIS (Kimi K2 Instruct)
@@ -958,42 +621,39 @@ WRITING STYLE:
         )
 
     def generate_top5_tldr(self, articles: list[Article]) -> str:
-        """Generate 'This Week at a Glance' section using WEF BLUF format."""
+        """Generate TL;DR Top 5 section."""
         sorted_articles = sorted(articles, key=lambda x: x.importance_score, reverse=True)
-        top_7 = sorted_articles[:7]
+        top_5 = sorted_articles[:5]
 
-        if not top_7:
+        if not top_5:
             return "No critical developments this week."
 
         headlines = "\n".join([
-            f"{i+1}. [{a.source}] {a.title} — {(a.ai_summary or '')[:150]}"
-            for i, a in enumerate(top_7)
+            f"{i+1}. [{a.source}] {a.title} (Score: {a.importance_score}/10)"
+            for i, a in enumerate(top_5)
         ])
 
-        prompt = f"""Create a "THIS WEEK AT A GLANCE" briefing for senior executives.
+        prompt = f"""Create a "TOP 5 THINGS TO KNOW THIS WEEK" section for busy executives.
 
-The 7 most important developments (ranked by importance):
+The 5 most important developments (ranked by importance score):
 {headlines}
 
-Write 5-7 bullet points. Each bullet MUST follow this EXACT format:
-[BOLD ACTION HEADLINE]. [1-2 sentences of context with specific data if available].
+For each item, write ONE sentence that answers: "What happened and why should I care?"
 
-Example format:
-Fed holds rates despite inflation surprise. The March CPI print of 3.2% exceeded the expected 2.9%, but Powell's post-meeting statement signals patience through Q2.
+Format:
+1. 🔴 [HEADLINE IN BOLD] - One sentence explanation
+2. 🟠 [HEADLINE IN BOLD] - One sentence explanation
+...
 
-Rules:
-- The headline should be a SHORT declarative statement (5-8 words)
-- Follow it with 1-2 sentences providing context, numbers, and implications
-- Be specific — include percentages, names, organizations, dates
-- Do NOT use markdown formatting, emojis, asterisks, or hashtags
-- Do NOT use bullet symbols — just number them 1, 2, 3...
-- Write in plain professional English"""
+Use 🔴 for critical (score 8+), 🟠 for important (5-7), 🟢 for notable (below 5).
+Be specific. No jargon. Maximum 20 words per explanation.
+If you don't have the specific data, keep it general but accurate."""
 
         return self._safe_chat(
             model=NvidiaModels.DEEP_ANALYZER,
             prompt=prompt,
-            fallback="\n".join([f"- [{a.source}] {a.title}" for a in top_7]),
-            max_tokens=768,
+            fallback="\n".join([f"• [{a.source}] {a.title}" for a in top_5]),
+            max_tokens=512,
             temperature=0.3
         )
 
@@ -1250,6 +910,7 @@ CRITICAL RULES:
 
     def deep_analyze_report(self, extracted_content, article) -> dict:
         """Deep analysis using DeepSeek V3.1 + Llama 4 Vision + OCDRNet."""
+        from analyzers.pdf_processor import extract_key_statistics
 
         result = {
             'success': False,
@@ -1257,9 +918,7 @@ CRITICAL RULES:
             'detailed_analysis': '',
             'key_statistics': [],
             'chart_descriptions': [],
-            'chart_images': [],          # Store actual image bytes for Word embedding
             'table_summaries': [],
-            'table_data': [],            # Store structured table data for Word tables
             'key_quotes': [],
             'page_count': extracted_content.page_count
         }
@@ -1269,33 +928,8 @@ CRITICAL RULES:
             return result
 
         try:
-            # 1. AI-powered statistics extraction (replaces broken regex)
-            if not self.quota_exhausted:
-                stats_text = self._safe_chat(
-                    model=NvidiaModels.SUMMARIZER,
-                    prompt=f"""Extract the 5-8 most important statistics and data points from this economic report text.
-For each statistic, provide: the metric name, the value, and one sentence of context.
-
-Format each as a complete sentence like:
-- GDP growth is projected at 2.1% for 2026, down from 2.8% in 2025.
-- Inflation expectations rose to 3.2%, above the ECB's 2% target.
-
-TEXT (first 4000 chars):
-{extracted_content.full_text[:4000]}
-
-IMPORTANT: Only extract statistics that are EXPLICITLY stated in the text.
-Do NOT include chart axis labels, page numbers, or OCR artifacts.
-If no clear statistics are found, write "No specific statistics available in the extracted text.""""",
-                    fallback="",
-                    max_tokens=512,
-                    temperature=0.1
-                )
-                if stats_text:
-                    # Parse the AI response into clean stat lines
-                    for line in stats_text.split('\n'):
-                        line = line.strip().lstrip('- ')
-                        if line and len(line) > 20 and not line.startswith('No specific'):
-                            result['key_statistics'].append(line)
+            # 1. Extract key statistics
+            result['key_statistics'] = extract_key_statistics(extracted_content.full_text)
 
             # 2. Summarize text chunks using DeepSeek V3.1
             chunk_summaries = []
@@ -1310,10 +944,9 @@ Focus on: Key findings, data points, policy implications, market-moving informat
 TEXT:
 {chunk[:6000]}
 
-Provide a concise summary (150-200 words). Do NOT use markdown formatting (no **, ##, or ####).
-Write in plain professional English with clear sentences:""",
+Provide a concise summary (100-150 words):""",
                     fallback="",
-                    max_tokens=384,
+                    max_tokens=256,
                     temperature=0.2
                 )
                 if summary:
@@ -1322,7 +955,7 @@ Write in plain professional English with clear sentences:""",
             # 3. Synthesize into comprehensive analysis
             if chunk_summaries and not self.quota_exhausted:
                 summaries_text = "\n\n".join([f"Section {i+1}: {s}" for i, s in enumerate(chunk_summaries)])
-                stats_bullets = "\n".join([f"- {s}" for s in result['key_statistics'][:8]]) if result['key_statistics'] else "No specific statistics extracted."
+                stats_text = "\n".join([f"• {s}" for s in result['key_statistics'][:10]]) if result['key_statistics'] else "No specific statistics extracted."
 
                 result['detailed_analysis'] = self._safe_chat(
                     model=NvidiaModels.DEEP_ANALYZER,
@@ -1332,89 +965,44 @@ SECTION SUMMARIES:
 {summaries_text}
 
 KEY STATISTICS:
-{stats_bullets}
+{stats_text}
 
-Write a "Major Findings and Analysis" covering:
+Write a "Major Findings & Analysis" covering:
 1. THE NON-OBVIOUS TRUTHS - deeper insights beyond headlines
-2. MACRO AND MICRO INDICATORS - GDP, inflation, employment implications
+2. MACRO & MICRO INDICATORS - GDP, inflation, employment implications
 3. POLICY IMPLICATIONS - government, central bank, regulatory impacts
 4. WHY THIS MATTERS - plain-language explanation with analogies
 
-CRITICAL FORMATTING RULES:
-- Do NOT use markdown: no ** for bold, no ## or ### or #### for headers
-- Use plain numbered headers like "1. THE NON-OBVIOUS TRUTHS" on their own line
-- Use dashes (-) for sub-points
-- Keep under 500 words but be substantive
-- Write in plain professional English""",
+Keep under 500 words. Use bullet points. Bold key numbers.""",
                     fallback="",
                     max_tokens=1024,
                     temperature=0.3,
                     credit_cost=2
                 )
 
-            # 4. Text-based chart analysis (replaces broken vision model)
-            #    Uses surrounding text + table data to describe charts
-            #    Still store images for Word embedding
-            if extracted_content.images and not self.quota_exhausted:
-                # Store images for Word doc (up to 3)
-                for img in extracted_content.images[:3]:
-                    result['chart_images'].append(img)
-
-                # Generate text-based chart descriptions from the report data
-                tables_context = ""
-                for td in result['table_data'][:3]:
-                    headers = ', '.join(str(h) for h in td.get('headers', [])[:6] if h)
-                    sample_row = ', '.join(str(c) for c in td.get('rows', [[]])[0][:6] if c) if td.get('rows') else ''
-                    tables_context += f"\nTable (page {td['page']}): Columns: {headers}. Sample row: {sample_row}"
-
-                stats_list = '\n'.join('- ' + s for s in result['key_statistics'][:6]) if result['key_statistics'] else 'No statistics extracted'
-                insufficient_msg = 'Insufficient data to describe report visualizations.'
-
-                chart_analysis = self._safe_chat(
-                    model=NvidiaModels.DEEP_ANALYZER,
-                    prompt=f"""This economic report "{article.title}" from {article.source_full} contains {len(extracted_content.images)} images/charts and {len(extracted_content.tables)} data tables.
-
-Based on the report text and table data below, describe what charts and visualizations are likely included in this report.
-For each chart (up to 3), describe:
-1. What type of chart it likely is (bar, line, trend, comparison)
-2. What data it shows based on the statistics and tables
-3. The key trend or takeaway
-
-KEY STATISTICS FROM REPORT:
-{stats_list}
-
-TABLE DATA:{tables_context if tables_context else ' No tables extracted'}
-
-REPORT TEXT (first 2000 chars):
-{extracted_content.full_text[:2000]}
-
-Write 1-3 chart descriptions as separate paragraphs. Each should be 2-3 sentences.
-Do NOT use markdown formatting. Write in plain professional English.
-If there is not enough data to describe charts, write: {insufficient_msg}""",
-                    fallback="",
-                    max_tokens=512,
-                    temperature=0.2
+            # 4. Analyze charts using Llama 4 Maverick (Vision)
+            for i, image_bytes in enumerate(extracted_content.images[:3]):
+                if self.quota_exhausted:
+                    break
+                description = self._safe_vision_chat(
+                    prompt=f"""This is a chart/graph from an economic report titled "{article.title}".
+Describe in 2-3 sentences:
+1. What type of chart is it?
+2. What data does it show?
+3. What is the key takeaway or trend?
+Be specific about numbers, percentages, or trends you can identify.""",
+                    image_bytes=image_bytes,
+                    fallback=""
                 )
-                if chart_analysis and 'insufficient' not in chart_analysis.lower():
-                    # Split into separate descriptions
-                    for para in chart_analysis.split('\n\n'):
-                        para = para.strip()
-                        if len(para) > 30:
-                            result['chart_descriptions'].append(para)
+                if description:
+                    result['chart_descriptions'].append(description)
 
-            # 5. Store structured table data (headers + rows) for proper Word rendering
+            # 5. Summarize tables
             for table in extracted_content.tables[:5]:
-                result['table_data'].append({
-                    'page': table['page'],
-                    'headers': table['headers'],
-                    'rows': table['rows'][:15],  # Limit rows
-                })
-                # Also store a text summary for reference
-                result['table_summaries'].append(
-                    f"Table from page {table['page']}: {len(table['rows'])} rows, columns: {', '.join(str(h) for h in table['headers'][:6] if h)}"
-                )
+                table_summary = f"**Table (Page {table['page']}):**\n{table['markdown'][:500]}"
+                result['table_summaries'].append(table_summary)
 
-            # 6. Generate 3-5 sentence summary of the full report
+            # 6. Generate summary
             if result['detailed_analysis']:
                 result['summary'] = self._safe_chat(
                     model=NvidiaModels.SUMMARIZER,
@@ -1422,22 +1010,14 @@ If there is not enough data to describe charts, write: {insufficient_msg}""",
 
 {result['detailed_analysis'][:2000]}
 
-Write a 3-5 sentence executive summary (150-200 words) covering:
-1. The main finding
-2. Why it matters
-3. Key data points
-4. What to watch for
-
-Do NOT use markdown formatting. Write in plain professional English.""",
-                    fallback=article.summary[:200] if article.summary else "Summary unavailable",
-                    max_tokens=384,
+Write a single-sentence summary (max 150 characters) capturing the most important finding:""",
+                    fallback=article.summary[:150] if article.summary else "Summary unavailable",
+                    max_tokens=128,
                     temperature=0.2
                 )
 
             result['success'] = True
-            logger.info(f"Deep analysis complete: {len(chunk_summaries)} chunks, "
-                       f"{len(result['chart_descriptions'])} charts, {len(result['table_data'])} tables, "
-                       f"{len(result['key_statistics'])} stats")
+            logger.info(f"Deep analysis complete: {len(chunk_summaries)} chunks, {len(result['chart_descriptions'])} charts")
 
         except Exception as e:
             logger.error(f"Deep analysis failed: {e}")
@@ -1477,27 +1057,21 @@ Do NOT use markdown formatting. Write in plain professional English.""",
         return 'General Economic'
 
     def _is_major_item(self, article: Article) -> bool:
-        """Determine if an article is major enough for detailed 4-section analysis."""
+        """Determine if an article is major enough for detailed analysis."""
         major_types = ['report', 'working_paper', 'speech', 'data_release']
         if article.content_type in major_types:
             return True
 
-        # Include ALL central banks + major organizations
-        major_orgs = ['Fed', 'ECB', 'BoE', 'BoJ', 'PBoC', 'RBI',
-                      'IMF', 'World Bank', 'OECD', 'WEF', 'BIS', 'ADB',
-                      'McKinsey', 'Deloitte', 'BCG', 'PwC', 'Goldman Sachs', 'JP Morgan',
-                      'Brookings', 'PIIE', 'NBER', 'Oxford Economics', 'Capital Economics',
-                      "Moody's", 'Fitch', 'S&P Ratings', 'S&P Global',
-                      'MoF India', 'NITI Aayog', 'MoSPI']
+        major_orgs = ['IMF', 'World Bank', 'RBI', 'OECD', 'WEF', 'BIS', 'McKinsey', 'Deloitte',
+                      'BCG', 'PwC', 'Goldman Sachs', 'JP Morgan', 'Brookings', 'PIIE']
         if article.source in major_orgs:
             return True
 
-        title_lower = article.title.lower()
-        key_phrases = ['outlook', 'report', 'survey', 'forecast', 'index', 'review',
-                      'economic survey', 'annual report', 'quarterly', 'bulletin',
-                      'press conference', 'statement', 'assessment', 'monitor']
-        if any(phrase in title_lower for phrase in key_phrases):
-            return True
+        if article.title.lower():
+            key_phrases = ['outlook', 'report', 'survey', 'forecast', 'index', 'review',
+                          'economic survey', 'annual report', 'quarterly', 'bulletin']
+            if any(phrase in article.title.lower() for phrase in key_phrases):
+                return True
 
         if self._is_expert_opinion(article):
             return True
@@ -1599,88 +1173,3 @@ Do NOT use markdown formatting. Write in plain professional English.""",
                 themes.append(theme)
 
         return themes if themes else ['General Economic']
-
-    # =====================================================================
-    # NEW SYNTHESIS: FORWARD WATCHLIST (Goldman Sachs-inspired)
-    # =====================================================================
-
-    def generate_forward_watchlist(self, articles: list, date_range: str) -> str:
-        """Generate a Forward Watchlist section — what to monitor next week."""
-        article_context = "\n".join([
-            f"- [{a.source}] {a.title}: {(a.ai_summary or '')[:100]}"
-            for a in sorted(articles, key=lambda x: x.importance_score, reverse=True)[:15]
-        ])
-
-        prompt = f"""Based on this week's economic intelligence ({date_range}), create a FORWARD WATCHLIST for the coming week.
-
-This week's top intelligence:
-{article_context}
-
-Write three sub-sections:
-
-KEY EVENTS NEXT WEEK
-List 5-7 specific events to watch (central bank meetings, data releases, political events, earnings). Include dates if known.
-
-TRIPWIRES
-Write 3 conditional scenarios in this format: "If [specific event/data point], then [likely consequence]."
-
-DATA TO WATCH
-List 4-5 specific economic indicators that would confirm or invalidate this week's analysis.
-
-Rules:
-- Be specific — name dates, organizations, data series
-- Do NOT use markdown formatting (no asterisks, hashtags, etc.)
-- Write in plain professional English
-- Keep it concise — maximum 400 words total"""
-
-        return self._safe_chat(
-            model=NvidiaModels.SYNTHESIZER,
-            prompt=prompt,
-            fallback="Forward watchlist unavailable.",
-            max_tokens=768,
-            temperature=0.3,
-            credit_cost=2
-        )
-
-    # =====================================================================
-    # NEW SYNTHESIS: RISK ASSESSMENT (WEF Global Risks-inspired)
-    # =====================================================================
-
-    def generate_risk_assessment(self, articles: list) -> str:
-        """Generate a risk assessment with radar table and narrative."""
-        article_context = "\n".join([
-            f"- [{a.source}] {a.title}: {(a.ai_summary or '')[:120]}"
-            for a in sorted(articles, key=lambda x: x.importance_score, reverse=True)[:20]
-        ])
-
-        prompt = f"""You are a Chief Risk Officer writing a weekly risk assessment for institutional investors.
-
-Based on this week's intelligence:
-{article_context}
-
-Write a risk assessment with these parts:
-
-OVERALL ASSESSMENT
-One sentence: the overall risk posture this week (e.g., "Cautiously optimistic with elevated tail risks from trade policy uncertainty").
-
-RISK RADAR
-List the top 6-8 risks in this format:
-[Risk name] | [Severity: Low/Moderate/Elevated/High/Critical] | [Trend: Rising/Stable/Declining] | [Timeframe: Immediate/Short-term/Medium-term/Structural]
-
-NARRATIVE
-2-3 paragraphs explaining why the risk landscape shifted this week compared to recent trends. Name specific events and data points.
-
-Rules:
-- Be specific and opinionated — this is for sophisticated investors
-- Do NOT use markdown formatting (no asterisks, hashtags, etc.)
-- Use pipe separators (|) for the risk radar table
-- Write in plain professional English"""
-
-        return self._safe_chat(
-            model=NvidiaModels.SYNTHESIZER,
-            prompt=prompt,
-            fallback="Risk assessment unavailable.",
-            max_tokens=1024,
-            temperature=0.3,
-            credit_cost=2
-        )

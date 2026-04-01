@@ -77,12 +77,9 @@ class ExcelGenerator:
         # Build the main sheet
         self._setup_headers()
         self._add_data_rows(articles)
-
-        # Use actual row count (after filtering) for formatting
-        actual_rows = self.ws.max_row - 1  # Subtract header row
-        self._apply_formatting(actual_rows)
-        self._add_conditional_formatting(actual_rows)
-        self._add_auto_filter(actual_rows)
+        self._apply_formatting(len(articles))
+        self._add_conditional_formatting(len(articles))
+        self._add_auto_filter(len(articles))
 
         # Summary sheet
         self._add_summary_sheet(articles, date_range)
@@ -130,12 +127,8 @@ class ExcelGenerator:
         self.ws.freeze_panes = 'C2'
 
     def _add_data_rows(self, articles: list[Article]):
-        """Add data rows with all article fields, skipping filtered non-economic content."""
-        # Filter out non-economic articles
-        economic_articles = [a for a in articles if getattr(a, 'verification_status', '') != 'filtered']
-        logger.info(f"Excel: {len(economic_articles)}/{len(articles)} articles after filtering non-economic content")
-
-        for row_idx, article in enumerate(economic_articles, 2):
+        """Add data rows with all article fields."""
+        for row_idx, article in enumerate(articles, 2):
             # 1. Organization
             self.ws.cell(row=row_idx, column=1, value=article.source)
 
@@ -183,7 +176,6 @@ class ExcelGenerator:
                 'verified': 'Verified',
                 'partial': 'Partial',
                 'unverified': 'Unverified',
-                'filtered': 'Filtered',
             }
             self.ws.cell(row=row_idx, column=12,
                         value=status_labels.get(article.verification_status, article.verification_status or '—'))

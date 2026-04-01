@@ -2,13 +2,14 @@
 """
 Economic Intelligence Agent - Main Orchestration Script
 
-Powered by NVIDIA NIM 6-Model Architecture:
-  1. Qwen 2.5 72B Instruct - Executive summaries & short analysis
+Powered by NVIDIA NIM 7-Model Architecture:
+  1. Mistral Small 3.1 - Quick article summaries
   2. DeepSeek V3.1 Terminus - Deep analysis & reasoning
   3. Llama 4 Maverick - Vision/chart analysis
   4. Rerank QA Mistral - Article relevance ranking
   5. NV-Embed-V1 - Embeddings for dedup & clustering
-  6. Kimi K2 Instruct - Long-context final synthesis
+  6. OCDRNet - OCR for scanned PDFs
+  7. Kimi K2 Instruct - Long-context final synthesis
 
 Usage:
     python main.py                    # Full run with email delivery
@@ -71,7 +72,7 @@ def run_agent(
     """
     logger.info("=" * 60)
     logger.info("Economic Intelligence Agent Starting")
-    logger.info("Powered by NVIDIA NIM 6-Model Architecture")
+    logger.info("Powered by NVIDIA NIM 7-Model Architecture")
     logger.info("=" * 60)
 
     date_range = get_date_range()
@@ -107,7 +108,7 @@ def run_agent(
         logger.info(f"[OK] Collected {len(all_articles)} articles from {len(articles_by_org)} organizations")
 
         # Step 2: AI Analysis with NVIDIA NIM
-        logger.info("\n[STEP 2] AI Analysis with NVIDIA NIM 6-Model Engine...")
+        logger.info("\n[STEP 2] AI Analysis with NVIDIA NIM 7-Model Engine...")
 
         tldr_top5 = ""
         cross_source = ""
@@ -117,9 +118,6 @@ def run_agent(
         geographic = {}
         key_numbers = ""
         executive_summary = ""
-        indicators = {}
-        forward_watchlist = ""
-        risk_assessment = ""
         analyzed_articles = all_articles
 
         # Check for NVIDIA API key
@@ -127,7 +125,7 @@ def run_agent(
             logger.warning("[WARNING] NVIDIA_API_KEY not set - skipping AI analysis")
             executive_summary = f"Weekly economic intelligence covering {len(all_articles)} articles from {len(articles_by_org)} organizations."
         else:
-            logger.info("[NVIDIA] Initializing 6-model architecture...")
+            logger.info("[NVIDIA] Initializing 7-model architecture...")
             try:
                 analyzer = NvidiaAnalyzer()
 
@@ -154,41 +152,18 @@ def run_agent(
                 logger.info("[OK] Articles ranked by economic relevance")
 
                 # ============================================================
-                # STEP 2d: FULL-TEXT ENRICHMENT (fetch article bodies)
+                # STEP 2d: ARTICLE ANALYSIS (Models 1 & 2: Mistral Small + DeepSeek)
                 # ============================================================
-                logger.info(f"[ENRICH] Fetching full article text for {len(ranked_articles)} articles...")
-                from collectors.article_enricher import ArticleEnricher
-                enricher = ArticleEnricher()
-                enriched_articles = enricher.enrich_articles(ranked_articles)
+                logger.info(f"[NVIDIA] 🟢🔵 Analyzing {len(ranked_articles)} articles...")
+                logger.info("[NVIDIA]   🟢 Mistral Small 3.1 → quick summaries")
+                logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → deep analysis (major reports)")
+                analyzed_articles = analyzer.analyze_batch(ranked_articles)
 
-                # ============================================================
-                # STEP 2e: ARTICLE ANALYSIS + MULTI-PASS (Qwen + DeepSeek + Kimi)
-                # ============================================================
-                logger.info(f"[NVIDIA] 🟢🔵🟡 Analyzing {len(enriched_articles)} articles...")
-                logger.info("[NVIDIA]   🟢 Qwen 2.5 72B → executive summaries")
-                logger.info("[NVIDIA]   🔵 DeepSeek V3.2 → deep analysis (major reports)")
-                logger.info("[NVIDIA]   🟡 Kimi K2 → strategic assessment (top 5)")
-                if analyzer.fallback_providers:
-                    fb_names = ', '.join(p['name'] for p in analyzer.fallback_providers)
-                    logger.info(f"[NVIDIA]   🔄 Fallback chain: {fb_names}")
-                analyzed_articles = analyzer.analyze_batch(enriched_articles)
-
-                if analyzer.quota_exhausted and not analyzer.fallback_providers:
-                    logger.warning("[NVIDIA] Credits exhausted during article analysis (no fallback available)")
+                if analyzer.quota_exhausted:
+                    logger.warning("[NVIDIA] Credits exhausted during article analysis")
                     logger.info(f"[NVIDIA] Success: {analyzer.successful_requests}, Failed: {analyzer.failed_requests}")
-                elif analyzer.using_fallback:
-                    fb_summary = ', '.join(f"{p['name']}:{p['calls']}" for p in analyzer.fallback_providers if p['calls'] > 0)
-                    logger.info(f"[NVIDIA] Switched to fallback after {analyzer.successful_requests} NVIDIA calls. Fallback: {fb_summary}")
                 else:
                     logger.info(f"[NVIDIA] Article analysis complete: {analyzer.successful_requests} successful")
-
-                # Save to cache for future runs
-                from analyzers.analysis_cache import AnalysisCache
-                cache = AnalysisCache()
-                for article in analyzed_articles:
-                    cache.store_article(article)
-                cache.save()
-                logger.info(f"[CACHE] Saved {cache.hits} cache hits, {cache.misses} new analyses")
 
                 # ============================================================
                 # STEP 2e: DEEP PDF ANALYSIS (Models 2, 3, 6)
@@ -201,7 +176,7 @@ def run_agent(
 
                     major_articles = [a for a in analyzed_articles if pdf_processor.should_deep_analyze(a)]
                     logger.info(f"[DEEP ANALYSIS] Found {len(major_articles)} major reports for deep PDF analysis")
-                    logger.info("[NVIDIA]   🔵 DeepSeek V3.2 → PDF text analysis")
+                    logger.info("[NVIDIA]   🔵 DeepSeek V3.1 → PDF text analysis")
                     logger.info("[NVIDIA]   🟣 Llama 4 Maverick → chart/image vision")
                     logger.info("[NVIDIA]   🔴 OCDRNet → OCR for scanned PDFs")
 
@@ -265,21 +240,14 @@ def run_agent(
                 geographic = analyzer.generate_geographic_summary(analyzed_articles)
                 logger.info("[OK] Generated geographic breakdown")
 
-                forward_watchlist = analyzer.generate_forward_watchlist(analyzed_articles, date_range)
-                logger.info("[OK] Generated forward watchlist")
-
-                risk_assessment = analyzer.generate_risk_assessment(analyzed_articles)
-                logger.info("[OK] Generated risk assessment")
-
                 # Final status
                 logger.info(f"[NVIDIA] ═══ FINAL STATUS ═══")
                 logger.info(f"[NVIDIA] Total API calls: {analyzer.total_api_calls}")
                 logger.info(f"[NVIDIA] Successful: {analyzer.successful_requests}")
                 logger.info(f"[NVIDIA] Failed: {analyzer.failed_requests}")
                 logger.info(f"[NVIDIA] Estimated credits used: ~{analyzer.credits_estimate}")
-                logger.info(f"[NVIDIA] Fallback calls: {analyzer.fallback_calls}")
 
-                if analyzer.quota_exhausted and not analyzer.fallback_providers:
+                if analyzer.quota_exhausted:
                     logger.warning("[NVIDIA] Some analysis may be partial due to credit limits")
 
             except Exception as e:
@@ -294,38 +262,23 @@ def run_agent(
                 a for a in analyzed_articles if a.source == org_name
             ]
 
-        # Step 3: Generate reports + charts
+        # Step 3: Generate reports
         logger.info("\n[STEP 3] Generating reports...")
 
         Settings.ensure_output_dir()
 
-        # Generate professional charts from ALL extracted data
-        logger.info("[CHARTS] Generating professional charts from extracted data...")
-        from generators.chart_generator import ChartGenerator
-        chart_gen = ChartGenerator()
-        charts = chart_gen.generate_all_charts(
-            articles=all_articles,
-            analyzed_articles=analyzed_articles,
-            indicators=indicators
-        )
-        logger.info(f"[CHARTS] Generated {len(charts)} charts")
-
         doc_generator = DocumentGenerator()
         doc_path = doc_generator.generate(
             articles_by_org=articles_by_org,
-            all_articles=analyzed_articles,
             executive_summary=executive_summary,
             date_range=date_range,
             tldr_top5=tldr_top5,
             cross_source_synthesis=cross_source,
             theme_summary=theme_summary,
             sentiment_analysis=sentiment,
-            risk_assessment=risk_assessment,
             actionable_implications=implications,
             geographic_summary=geographic,
-            key_numbers=key_numbers,
-            forward_watchlist=forward_watchlist,
-            charts=charts
+            key_numbers=key_numbers
         )
         logger.info(f"[OK] Word document: {doc_path}")
 
@@ -391,7 +344,7 @@ def test_email():
             <body style="font-family: Arial, sans-serif; padding: 20px;">
                 <h2>✅ Test Successful!</h2>
                 <p>Your Economic Intelligence Agent email configuration is working correctly.</p>
-                <p>Now powered by <b>NVIDIA NIM 6-Model Architecture</b>.</p>
+                <p>Now powered by <b>NVIDIA NIM 7-Model Architecture</b>.</p>
                 <p>You will receive weekly reports at this address every Monday.</p>
             </body>
             </html>

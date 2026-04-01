@@ -417,22 +417,68 @@ class NvidiaAnalyzer:
     # ARTICLE ANALYSIS (Models 1 & 2)
     # =====================================================================
 
+    # Patterns that indicate non-economic content (navigation pages, HR, etc.)
+    NON_ECONOMIC_PATTERNS = [
+        'career', 'join us', 'join our team', 'returner programme', 'diversity and inclusion',
+        'why you should join', 'speaker for your school', 'request a speaker',
+        'using images of banknotes', 'damaged and contaminated', 'exchanging old banknotes',
+        'counterfeit banknotes', 'note circulation scheme', 'advice for retailers',
+        'scottish and northern ireland banknotes', 'wholesale cash supervision',
+        'what is monetary policy?', 'benefits of price stability', 'scope of monetary policy',
+        'transmission mechanism', 'medium-term orientation', 'two per cent inflation target',
+        'economic, monetary and financial analysis', 'decisions, statements',
+        'monetary policy strategy', 'asset purchase programmes',
+        'research support programme', 'we value diversity',
+        'cookie policy', 'privacy policy', 'terms of use', 'contact us',
+        'subscribe', 'newsletter', 'about us', 'sitemap',
+    ]
+
+    def _is_economic_content(self, article: Article) -> bool:
+        """Filter out non-economic content like HR pages, navigation links, etc."""
+        title_lower = article.title.lower().strip()
+
+        # Check against non-economic patterns
+        for pattern in self.NON_ECONOMIC_PATTERNS:
+            if pattern in title_lower:
+                return False
+
+        # Very short titles with no economic keywords are suspicious
+        if len(title_lower) < 15:
+            economic_words = ['rate', 'gdp', 'inflation', 'policy', 'growth', 'trade',
+                            'bank', 'economic', 'financial', 'market', 'data', 'report']
+            if not any(w in title_lower for w in economic_words):
+                return False
+
+        return True
+
     def analyze_article(self, article: Article) -> Article:
         """Analyze a single article and populate AI fields."""
         if self.quota_exhausted:
             return self._fallback_analysis(article)
 
+        # Filter out non-economic content (no API calls wasted)
+        if not self._is_economic_content(article):
+            article.ai_summary = ""
+            article.ai_analysis = ""
+            article.ai_category = "Non-Economic"
+            article.importance_score = 0
+            article.importance_level = "Filtered"
+            article.themes = []
+            article.verification_status = "filtered"
+            logger.debug(f"[FILTER] Skipped non-economic: {article.title[:60]}")
+            return article
+
         try:
-            # Generate summary using fast Mistral Small 3.1
+            # Generate 3-5 sentence summary using Mistral Small 3.1
             article.ai_summary = self._safe_chat(
                 model=NvidiaModels.SUMMARIZER,
                 prompt=self._summary_prompt(article),
-                fallback=article.summary[:150] if article.summary else "Summary not available",
-                max_tokens=256,
+                fallback=article.summary[:200] if article.summary else "Summary not available",
+                max_tokens=512,
                 temperature=0.2
             )
 
-            # Deep analysis for major items using DeepSeek V3.1
+            # Full 4-section analysis for major items using DeepSeek V3.1
             if self._is_major_item(article) and not self.quota_exhausted:
                 article.ai_analysis = self._safe_chat(
                     model=NvidiaModels.DEEP_ANALYZER,
@@ -441,6 +487,15 @@ class NvidiaAnalyzer:
                     max_tokens=1024,
                     temperature=0.3,
                     credit_cost=1
+                )
+            # Short 2-paragraph analysis for all other economic articles
+            elif not self.quota_exhausted:
+                article.ai_analysis = self._safe_chat(
+                    model=NvidiaModels.SUMMARIZER,
+                    prompt=self._short_analysis_prompt(article),
+                    fallback="",
+                    max_tokens=512,
+                    temperature=0.3
                 )
 
             # Non-AI methods (keyword-based, no API calls)
@@ -459,23 +514,26 @@ class NvidiaAnalyzer:
     def analyze_batch(self, articles: list[Article], batch_size: int = 10) -> list[Article]:
         """Analyze multiple articles efficiently."""
         analyzed = []
+        filtered_count = 0
         total = len(articles)
 
         for i, article in enumerate(articles):
             analyzed_article = self.analyze_article(article)
+            if analyzed_article.verification_status == "filtered":
+                filtered_count += 1
             analyzed.append(analyzed_article)
 
             if (i + 1) % batch_size == 0:
                 logger.info(f"Analyzed {i + 1}/{total} articles "
-                           f"(credits: ~{self.credits_estimate}, calls: {self.total_api_calls})")
+                           f"(filtered: {filtered_count}, credits: ~{self.credits_estimate}, calls: {self.total_api_calls})")
                 time.sleep(1)
 
-        logger.info(f"Analysis complete: {len(analyzed)} articles, ~{self.credits_estimate} credits used")
+        logger.info(f"Analysis complete: {len(analyzed)} articles ({filtered_count} filtered), ~{self.credits_estimate} credits used")
         return analyzed
 
     def _fallback_analysis(self, article: Article) -> Article:
         """Provide fallback analysis when credits are exhausted."""
-        article.ai_summary = article.summary[:150] if article.summary else "AI analysis unavailable (credits exhausted)"
+        article.ai_summary = article.summary[:200] if article.summary else "AI analysis unavailable (credits exhausted)"
         article.ai_analysis = ""
         article.ai_category = self._categorize(article)
         article.importance_score = self._calculate_importance(article)
@@ -489,9 +547,13 @@ class NvidiaAnalyzer:
     # =====================================================================
 
     def _summary_prompt(self, article: Article) -> str:
-        return f"""Generate a single-sentence summary (max 100 words) of this economic/financial content.
-The summary should capture the key finding or main point.
-Write in a professional but accessible tone suitable for general readers.
+        return f"""Write an executive summary (3-5 sentences, 150-200 words) of this economic/financial content.
+
+Cover these points in your summary:
+1. WHAT: The main announcement, finding, or development
+2. WHY IT MATTERS: The significance for markets, policy, or the broader economy
+3. KEY NUMBERS: Any specific data points, percentages, or figures mentioned
+4. IMPLICATIONS: What this means going forward
 
 Title: {article.title}
 Source: {article.source_full}
@@ -500,7 +562,24 @@ Category: {article.category}
 Content/Description:
 {article.summary or article.content_preview or 'No content available'}
 
-Provide ONLY the one-line summary, no other text."""
+Write a professional but accessible summary. Do NOT use markdown formatting (no **, no ##, no bullet points).
+Do NOT make up numbers — only include data explicitly stated in the content.
+Provide ONLY the summary paragraph, no headers or labels."""
+
+    def _short_analysis_prompt(self, article: Article) -> str:
+        """Shorter analysis for non-major articles (2 paragraphs instead of 4 sections)."""
+        return f"""You are an economic intelligence analyst. Write a brief analysis (2 paragraphs, 100-150 words total) of this article.
+
+Title: {article.title}
+Source: {article.source_full}
+Category: {article.category}
+Content: {article.summary or article.content_preview or 'No content available'}
+
+Paragraph 1: What is the key development and what does it signal for the economy?
+Paragraph 2: What should investors, businesses, or policymakers watch for as a result?
+
+CRITICAL: Do NOT use markdown formatting (no **, ##, ####, or bullet dashes).
+Do NOT invent numbers. Write in plain professional English."""
 
     def _analysis_prompt(self, article: Article) -> str:
         return f"""You are an economic intelligence analyst writing for the "Global Pulse Weekly Report."
@@ -517,32 +596,32 @@ Available Content:
 
 {article.content_preview if article.content_preview else ''}
 
-YOUR TASK: Provide a comprehensive "Major Findings & Analysis" block following this structure:
+YOUR TASK: Provide a comprehensive "Major Findings & Analysis" block following this EXACT structure.
+IMPORTANT: Do NOT use markdown hash symbols (##, ###, ####). Use plain text headers like "1. THE NON-OBVIOUS TRUTHS" without any # or ** markers.
 
-**1. THE NON-OBVIOUS TRUTHS**
+1. THE NON-OBVIOUS TRUTHS
 Don't just report headlines. Extract the underlying shifts, hidden patterns, or counterintuitive findings that a casual reader would miss. What does the data REALLY tell us beyond the press release?
 
-**2. MACRO & MICRO INDICATORS**
-- Macroeconomic: GDP growth, inflation, employment, trade balance implications
-- Microeconomic: Industry-specific impacts, consumer behavior, business implications
+2. MACRO AND MICRO INDICATORS
+Macroeconomic: GDP growth, inflation, employment, trade balance implications.
+Microeconomic: Industry-specific impacts, consumer behavior, business implications.
 
-**3. POLICY IMPLICATIONS**
+3. POLICY IMPLICATIONS
 What does this mean for:
 - Government policy (fiscal, monetary, regulatory)
 - Central bank actions
 - Industry regulations
 
-**4. WHY THIS MATTERS TO YOU**
-Explain the real-world impact in plain terms. Use clear analogies for complex concepts:
-- Example: "Fiscal deficit is like the nation's credit card balance"
-- Example: "Quantitative easing is like the central bank 'printing money' to stimulate the economy"
+4. WHY THIS MATTERS
+Explain the real-world impact in plain terms. Use clear analogies for complex concepts.
+Example: "Fiscal deficit is like the nation's credit card balance."
 
 CRITICAL RULES:
+- Do NOT use markdown formatting: no ** for bold, no ## for headers, no #### anywhere
+- Use plain text with numbered sections (1. 2. 3. 4.) and dashes for sub-points
 - Use "Professional-Layman Mix" tone: Be precise with data but explain jargon simply
-- If specific data points are NOT in the content, say "The full report contains detailed data at [source URL]" - NEVER guess or make up numbers
-- Keep total response under 500 words but be substantive, not generic
-- Use bullet points for readability
-- Bold key numbers and findings"""
+- If specific data points are NOT in the content, say "The full report contains detailed data" - NEVER guess or make up numbers
+- Keep total response under 500 words but be substantive, not generic"""
 
     # =====================================================================
     # MODEL 7: FINAL SYNTHESIS (Kimi K2 Instruct)
@@ -910,7 +989,6 @@ CRITICAL RULES:
 
     def deep_analyze_report(self, extracted_content, article) -> dict:
         """Deep analysis using DeepSeek V3.1 + Llama 4 Vision + OCDRNet."""
-        from analyzers.pdf_processor import extract_key_statistics
 
         result = {
             'success': False,
@@ -918,7 +996,9 @@ CRITICAL RULES:
             'detailed_analysis': '',
             'key_statistics': [],
             'chart_descriptions': [],
+            'chart_images': [],          # Store actual image bytes for Word embedding
             'table_summaries': [],
+            'table_data': [],            # Store structured table data for Word tables
             'key_quotes': [],
             'page_count': extracted_content.page_count
         }
@@ -928,8 +1008,33 @@ CRITICAL RULES:
             return result
 
         try:
-            # 1. Extract key statistics
-            result['key_statistics'] = extract_key_statistics(extracted_content.full_text)
+            # 1. AI-powered statistics extraction (replaces broken regex)
+            if not self.quota_exhausted:
+                stats_text = self._safe_chat(
+                    model=NvidiaModels.SUMMARIZER,
+                    prompt=f"""Extract the 5-8 most important statistics and data points from this economic report text.
+For each statistic, provide: the metric name, the value, and one sentence of context.
+
+Format each as a complete sentence like:
+- GDP growth is projected at 2.1% for 2026, down from 2.8% in 2025.
+- Inflation expectations rose to 3.2%, above the ECB's 2% target.
+
+TEXT (first 4000 chars):
+{extracted_content.full_text[:4000]}
+
+IMPORTANT: Only extract statistics that are EXPLICITLY stated in the text.
+Do NOT include chart axis labels, page numbers, or OCR artifacts.
+If no clear statistics are found, write "No specific statistics available in the extracted text.""""",
+                    fallback="",
+                    max_tokens=512,
+                    temperature=0.1
+                )
+                if stats_text:
+                    # Parse the AI response into clean stat lines
+                    for line in stats_text.split('\n'):
+                        line = line.strip().lstrip('- ')
+                        if line and len(line) > 20 and not line.startswith('No specific'):
+                            result['key_statistics'].append(line)
 
             # 2. Summarize text chunks using DeepSeek V3.1
             chunk_summaries = []
@@ -944,9 +1049,10 @@ Focus on: Key findings, data points, policy implications, market-moving informat
 TEXT:
 {chunk[:6000]}
 
-Provide a concise summary (100-150 words):""",
+Provide a concise summary (150-200 words). Do NOT use markdown formatting (no **, ##, or ####).
+Write in plain professional English with clear sentences:""",
                     fallback="",
-                    max_tokens=256,
+                    max_tokens=384,
                     temperature=0.2
                 )
                 if summary:
@@ -955,7 +1061,7 @@ Provide a concise summary (100-150 words):""",
             # 3. Synthesize into comprehensive analysis
             if chunk_summaries and not self.quota_exhausted:
                 summaries_text = "\n\n".join([f"Section {i+1}: {s}" for i, s in enumerate(chunk_summaries)])
-                stats_text = "\n".join([f"• {s}" for s in result['key_statistics'][:10]]) if result['key_statistics'] else "No specific statistics extracted."
+                stats_bullets = "\n".join([f"- {s}" for s in result['key_statistics'][:8]]) if result['key_statistics'] else "No specific statistics extracted."
 
                 result['detailed_analysis'] = self._safe_chat(
                     model=NvidiaModels.DEEP_ANALYZER,
@@ -965,15 +1071,20 @@ SECTION SUMMARIES:
 {summaries_text}
 
 KEY STATISTICS:
-{stats_text}
+{stats_bullets}
 
-Write a "Major Findings & Analysis" covering:
+Write a "Major Findings and Analysis" covering:
 1. THE NON-OBVIOUS TRUTHS - deeper insights beyond headlines
-2. MACRO & MICRO INDICATORS - GDP, inflation, employment implications
+2. MACRO AND MICRO INDICATORS - GDP, inflation, employment implications
 3. POLICY IMPLICATIONS - government, central bank, regulatory impacts
 4. WHY THIS MATTERS - plain-language explanation with analogies
 
-Keep under 500 words. Use bullet points. Bold key numbers.""",
+CRITICAL FORMATTING RULES:
+- Do NOT use markdown: no ** for bold, no ## or ### or #### for headers
+- Use plain numbered headers like "1. THE NON-OBVIOUS TRUTHS" on their own line
+- Use dashes (-) for sub-points
+- Keep under 500 words but be substantive
+- Write in plain professional English""",
                     fallback="",
                     max_tokens=1024,
                     temperature=0.3,
@@ -981,28 +1092,40 @@ Keep under 500 words. Use bullet points. Bold key numbers.""",
                 )
 
             # 4. Analyze charts using Llama 4 Maverick (Vision)
+            #    Also store image bytes for Word document embedding
             for i, image_bytes in enumerate(extracted_content.images[:3]):
                 if self.quota_exhausted:
                     break
                 description = self._safe_vision_chat(
                     prompt=f"""This is a chart/graph from an economic report titled "{article.title}".
-Describe in 2-3 sentences:
-1. What type of chart is it?
-2. What data does it show?
+Describe in 3-4 sentences:
+1. What type of chart is it? (bar, line, pie, scatter, etc.)
+2. What data does it show? What are the axes/labels?
 3. What is the key takeaway or trend?
-Be specific about numbers, percentages, or trends you can identify.""",
+4. Any specific numbers or data points visible?
+Be specific. If the image is NOT a chart (e.g., a logo or photo), say "This image is not a chart" and briefly describe what it shows.""",
                     image_bytes=image_bytes,
                     fallback=""
                 )
-                if description:
+                if description and 'not a chart' not in description.lower():
                     result['chart_descriptions'].append(description)
+                    result['chart_images'].append(image_bytes)
+                elif description:
+                    logger.debug(f"Skipped non-chart image: {description[:50]}")
 
-            # 5. Summarize tables
+            # 5. Store structured table data (headers + rows) for proper Word rendering
             for table in extracted_content.tables[:5]:
-                table_summary = f"**Table (Page {table['page']}):**\n{table['markdown'][:500]}"
-                result['table_summaries'].append(table_summary)
+                result['table_data'].append({
+                    'page': table['page'],
+                    'headers': table['headers'],
+                    'rows': table['rows'][:15],  # Limit rows
+                })
+                # Also store a text summary for reference
+                result['table_summaries'].append(
+                    f"Table from page {table['page']}: {len(table['rows'])} rows, columns: {', '.join(str(h) for h in table['headers'][:6] if h)}"
+                )
 
-            # 6. Generate summary
+            # 6. Generate 3-5 sentence summary of the full report
             if result['detailed_analysis']:
                 result['summary'] = self._safe_chat(
                     model=NvidiaModels.SUMMARIZER,
@@ -1010,14 +1133,22 @@ Be specific about numbers, percentages, or trends you can identify.""",
 
 {result['detailed_analysis'][:2000]}
 
-Write a single-sentence summary (max 150 characters) capturing the most important finding:""",
-                    fallback=article.summary[:150] if article.summary else "Summary unavailable",
-                    max_tokens=128,
+Write a 3-5 sentence executive summary (150-200 words) covering:
+1. The main finding
+2. Why it matters
+3. Key data points
+4. What to watch for
+
+Do NOT use markdown formatting. Write in plain professional English.""",
+                    fallback=article.summary[:200] if article.summary else "Summary unavailable",
+                    max_tokens=384,
                     temperature=0.2
                 )
 
             result['success'] = True
-            logger.info(f"Deep analysis complete: {len(chunk_summaries)} chunks, {len(result['chart_descriptions'])} charts")
+            logger.info(f"Deep analysis complete: {len(chunk_summaries)} chunks, "
+                       f"{len(result['chart_descriptions'])} charts, {len(result['table_data'])} tables, "
+                       f"{len(result['key_statistics'])} stats")
 
         except Exception as e:
             logger.error(f"Deep analysis failed: {e}")
@@ -1057,21 +1188,27 @@ Write a single-sentence summary (max 150 characters) capturing the most importan
         return 'General Economic'
 
     def _is_major_item(self, article: Article) -> bool:
-        """Determine if an article is major enough for detailed analysis."""
+        """Determine if an article is major enough for detailed 4-section analysis."""
         major_types = ['report', 'working_paper', 'speech', 'data_release']
         if article.content_type in major_types:
             return True
 
-        major_orgs = ['IMF', 'World Bank', 'RBI', 'OECD', 'WEF', 'BIS', 'McKinsey', 'Deloitte',
-                      'BCG', 'PwC', 'Goldman Sachs', 'JP Morgan', 'Brookings', 'PIIE']
+        # Include ALL central banks + major organizations
+        major_orgs = ['Fed', 'ECB', 'BoE', 'BoJ', 'PBoC', 'RBI',
+                      'IMF', 'World Bank', 'OECD', 'WEF', 'BIS', 'ADB',
+                      'McKinsey', 'Deloitte', 'BCG', 'PwC', 'Goldman Sachs', 'JP Morgan',
+                      'Brookings', 'PIIE', 'NBER', 'Oxford Economics', 'Capital Economics',
+                      "Moody's", 'Fitch', 'S&P Ratings', 'S&P Global',
+                      'MoF India', 'NITI Aayog', 'MoSPI']
         if article.source in major_orgs:
             return True
 
-        if article.title.lower():
-            key_phrases = ['outlook', 'report', 'survey', 'forecast', 'index', 'review',
-                          'economic survey', 'annual report', 'quarterly', 'bulletin']
-            if any(phrase in article.title.lower() for phrase in key_phrases):
-                return True
+        title_lower = article.title.lower()
+        key_phrases = ['outlook', 'report', 'survey', 'forecast', 'index', 'review',
+                      'economic survey', 'annual report', 'quarterly', 'bulletin',
+                      'press conference', 'statement', 'assessment', 'monitor']
+        if any(phrase in title_lower for phrase in key_phrases):
+            return True
 
         if self._is_expert_opinion(article):
             return True

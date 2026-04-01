@@ -385,7 +385,7 @@ class DocumentGenerator:
                 current_paragraph = None  # Reset on blank line
                 continue
 
-            # Heading lines: **SOME HEADER** or ## Header
+            # Heading lines: **SOME HEADER** or ## Header or ### Header or #### Header
             if (stripped.startswith('**') and stripped.endswith('**') and
                     stripped.count('**') == 2):
                 inner = stripped[2:-2].strip()
@@ -399,13 +399,30 @@ class DocumentGenerator:
                 current_paragraph = None
                 continue
 
-            if stripped.startswith('## '):
+            # Handle all markdown heading levels: ####, ###, ##
+            heading_match = re.match(r'^(#{2,4})\s+(.+)', stripped)
+            if heading_match:
+                heading_text = heading_match.group(2).strip().rstrip('*')  # Remove trailing **
                 p = self.doc.add_paragraph()
                 p.paragraph_format.space_before = Pt(12)
-                run = p.add_run(stripped[3:])
+                p.paragraph_format.space_after = Pt(4)
+                run = p.add_run(heading_text)
                 run.font.bold = True
                 run.font.size = Pt(11)
                 run.font.color.rgb = DARK_BLUE
+                current_paragraph = None
+                continue
+
+            # Section-numbered headers: "1. THE NON-OBVIOUS TRUTHS" (all caps with number)
+            section_match = re.match(r'^(\d+)\.\s+([A-Z][A-Z\s&]+)$', stripped)
+            if section_match:
+                p = self.doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(12)
+                p.paragraph_format.space_after = Pt(4)
+                run = p.add_run(f"{section_match.group(1)}. {section_match.group(2)}")
+                run.font.bold = True
+                run.font.size = Pt(11)
+                run.font.color.rgb = ACCENT_BLUE
                 current_paragraph = None
                 continue
 
@@ -732,8 +749,10 @@ class DocumentGenerator:
         run.font.color.rgb = GREY_TEXT
         p.paragraph_format.space_after = Pt(8)
 
-        # Articles
+        # Articles — skip filtered (non-economic) content
         for article in articles:
+            if getattr(article, 'verification_status', '') == 'filtered':
+                continue
             self._add_article(article)
 
     def _add_article(self, article: Article):
@@ -799,8 +818,22 @@ class DocumentGenerator:
                 ap.paragraph_format.left_indent = Inches(0.25)
                 ap.paragraph_format.space_after = Pt(3)
 
-                if stripped.startswith('**') and stripped.endswith('**'):
+                # Handle section-numbered headers like "1. THE NON-OBVIOUS TRUTHS"
+                section_match = re.match(r'^(\d+)\.\s+([A-Z][A-Z\s&]+)$', stripped)
+                if section_match:
+                    run = ap.add_run(f"{section_match.group(1)}. {section_match.group(2)}")
+                    run.font.bold = True
+                    run.font.size = Pt(10)
+                    run.font.color.rgb = ACCENT_BLUE
+                elif stripped.startswith('**') and stripped.endswith('**'):
                     run = ap.add_run(stripped.strip('*'))
+                    run.font.bold = True
+                    run.font.size = Pt(10)
+                    run.font.color.rgb = ACCENT_BLUE
+                elif re.match(r'^#{2,4}\s+', stripped):
+                    # Handle markdown headings in analysis
+                    clean = re.sub(r'^#{2,4}\s+', '', stripped).rstrip('*')
+                    run = ap.add_run(clean)
                     run.font.bold = True
                     run.font.size = Pt(10)
                     run.font.color.rgb = ACCENT_BLUE
@@ -836,13 +869,14 @@ class DocumentGenerator:
 
     def _add_deep_analysis_content(self, deep: dict):
         """Add deep analysis sections using proper Word formatting."""
+        from io import BytesIO
 
-        # Key Statistics
+        # Key Statistics (AI-extracted, clean sentences)
         if deep.get('key_statistics'):
             header = self.doc.add_paragraph()
             header.paragraph_format.left_indent = Inches(0.25)
             header.paragraph_format.space_before = Pt(6)
-            run = header.add_run("[KEY STATISTICS]")
+            run = header.add_run("KEY STATISTICS")
             run.font.bold = True
             run.font.size = Pt(10)
             run.font.color.rgb = ACCENT_BLUE
@@ -854,38 +888,128 @@ class DocumentGenerator:
                 run = sp.add_run(f"- {stat}")
                 run.font.size = SMALL_SIZE
 
-        # Chart Descriptions
-        if deep.get('chart_descriptions'):
+        # Charts — embed actual images from PDF + descriptions
+        chart_images = deep.get('chart_images', [])
+        chart_descriptions = deep.get('chart_descriptions', [])
+
+        if chart_descriptions:
             header = self.doc.add_paragraph()
             header.paragraph_format.left_indent = Inches(0.25)
             header.paragraph_format.space_before = Pt(6)
-            run = header.add_run("[CHARTS ANALYZED]")
+            run = header.add_run("CHARTS FROM REPORT")
             run.font.bold = True
             run.font.size = Pt(10)
             run.font.color.rgb = ACCENT_BLUE
 
-            for i, desc in enumerate(deep['chart_descriptions'][:3], 1):
+            for i, desc in enumerate(chart_descriptions[:3]):
+                # Embed the actual chart image if available
+                if i < len(chart_images):
+                    try:
+                        image_stream = BytesIO(chart_images[i])
+                        self.doc.add_picture(image_stream, width=Inches(4.5))
+                        # Caption below image
+                        caption = self.doc.add_paragraph()
+                        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        caption.paragraph_format.space_after = Pt(2)
+                        run = caption.add_run(f"Chart {i+1}")
+                        run.font.italic = True
+                        run.font.size = CAPTION_SIZE
+                        run.font.color.rgb = GREY_TEXT
+                    except Exception as e:
+                        logger.warning(f"Could not embed chart image {i+1}: {e}")
+
+                # Chart analysis description
                 cp = self.doc.add_paragraph()
-                cp.paragraph_format.left_indent = Inches(0.5)
-                cp.paragraph_format.space_after = Pt(4)
-                label = cp.add_run(f"Chart {i}: ")
+                cp.paragraph_format.left_indent = Inches(0.3)
+                cp.paragraph_format.space_after = Pt(8)
+                label = cp.add_run(f"Chart {i+1} Analysis: ")
                 label.font.bold = True
                 label.font.size = SMALL_SIZE
                 text = cp.add_run(desc)
                 text.font.size = SMALL_SIZE
 
-        # Table Summaries (as a proper Word table, not raw markdown)
-        if deep.get('table_summaries'):
+        # Tables — render structured data as proper Word tables
+        table_data = deep.get('table_data', [])
+        if table_data:
             header = self.doc.add_paragraph()
             header.paragraph_format.left_indent = Inches(0.25)
             header.paragraph_format.space_before = Pt(6)
-            run = header.add_run("[KEY TABLES]")
+            run = header.add_run("KEY TABLES FROM REPORT")
             run.font.bold = True
             run.font.size = Pt(10)
             run.font.color.rgb = ACCENT_BLUE
 
-            for table_md in deep['table_summaries'][:3]:
-                self._render_markdown_table(table_md)
+            for td in table_data[:3]:
+                self._render_structured_table(td)
+        # Fallback to markdown tables if no structured data
+        elif deep.get('table_summaries'):
+            header = self.doc.add_paragraph()
+            header.paragraph_format.left_indent = Inches(0.25)
+            header.paragraph_format.space_before = Pt(6)
+            run = header.add_run("KEY TABLES")
+            run.font.bold = True
+            run.font.size = Pt(10)
+            run.font.color.rgb = ACCENT_BLUE
+
+            for summary in deep['table_summaries'][:3]:
+                p = self.doc.add_paragraph()
+                p.paragraph_format.left_indent = Inches(0.5)
+                run = p.add_run(summary)
+                run.font.size = SMALL_SIZE
+
+    def _render_structured_table(self, table_info: dict):
+        """Render a structured table (headers + rows) as a proper Word table."""
+        headers = table_info.get('headers', [])
+        rows = table_info.get('rows', [])
+        page = table_info.get('page', '?')
+
+        if not headers or not rows:
+            return
+
+        # Clean headers
+        clean_headers = [str(h).strip() if h else f"Col{i}" for i, h in enumerate(headers)]
+        # Limit columns to 6 for readability
+        num_cols = min(len(clean_headers), 6)
+        clean_headers = clean_headers[:num_cols]
+
+        # Table label
+        label = self.doc.add_paragraph()
+        label.paragraph_format.left_indent = Inches(0.3)
+        label.paragraph_format.space_before = Pt(6)
+        run = label.add_run(f"Table from page {page}:")
+        run.font.italic = True
+        run.font.size = SMALL_SIZE
+        run.font.color.rgb = GREY_TEXT
+
+        # Create Word table
+        table = self.doc.add_table(rows=1, cols=num_cols)
+        table.style = 'Table Grid'
+
+        # Header row
+        for i, h in enumerate(clean_headers):
+            cell = table.rows[0].cells[i]
+            cell.text = h
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.bold = True
+                    run.font.size = Pt(8)
+                    run.font.name = FONT_FAMILY
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{SHADE_TITLE_BG}"/>')
+            cell._tc.get_or_add_tcPr().append(shading)
+
+        # Data rows (limit to 10)
+        for row_data in rows[:10]:
+            row = table.add_row()
+            for i in range(num_cols):
+                cell_text = str(row_data[i]).strip() if i < len(row_data) and row_data[i] else ""
+                row.cells[i].text = cell_text
+                for paragraph in row.cells[i].paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(8)
+                        run.font.name = FONT_FAMILY
+
+        self.doc.add_paragraph()  # Spacer
 
     def _render_markdown_table(self, markdown_text: str):
         """Convert a markdown table to a Word table, or render as text if not parseable."""

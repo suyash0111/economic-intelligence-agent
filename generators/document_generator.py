@@ -1,33 +1,70 @@
 """
-Document Generator - Creates Word documents for comprehensive reports.
+Document Generator - Creates professionally formatted Word documents.
+Complete rewrite for proper typography, layout, and structure.
 """
 
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt, RGBColor, Cm, Emu
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import parse_xml
 from pathlib import Path
 from datetime import datetime
 import logging
+import re
 
 from collectors.base_collector import Article
 from config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
+# =========================================================================
+# DESIGN CONSTANTS
+# =========================================================================
+
+# Color Palette
+NAVY = RGBColor(0x0D, 0x1B, 0x2A)      # Primary headers
+DARK_BLUE = RGBColor(0x1B, 0x3A, 0x4B)  # Secondary headers
+ACCENT_BLUE = RGBColor(0x00, 0x66, 0x99) # Subheadings
+LINK_BLUE = RGBColor(0x05, 0x63, 0xC1)   # Hyperlinks
+GREY_TEXT = RGBColor(0x71, 0x80, 0x96)    # Captions, dates
+LIGHT_GREY = RGBColor(0xA0, 0xAE, 0xC0)  # Subtle text
+RED = RGBColor(0xB4, 0x00, 0x00)          # Critical items
+ORANGE = RGBColor(0xC8, 0x64, 0x00)       # Important items
+GREEN = RGBColor(0x00, 0x78, 0x00)        # Positive/notable
+
+# Font
+FONT_FAMILY = 'Calibri'
+BODY_SIZE = Pt(10.5)
+SMALL_SIZE = Pt(9)
+CAPTION_SIZE = Pt(8.5)
+
+# Hex color strings for XML shading
+SHADE_TITLE_BG = "0D1B2A"
+SHADE_SECTION_BG = "E8EDF2"
+SHADE_ARTICLE_BG = "F4F6F8"
+SHADE_CRITICAL = "FFF0F0"
+SHADE_IMPORTANT = "FFF8F0"
+
 
 class DocumentGenerator:
     """
-    Generates Word documents with comprehensive economic intelligence reports.
-    Reports are organized by organization/category with detailed analysis.
+    Generates professionally formatted Word documents for the
+    Global Pulse Weekly Economic Intelligence Report.
     """
-    
+
     def __init__(self):
-        """Initialize the document generator."""
         self.doc = None
-    
+
+    # =====================================================================
+    # PUBLIC API
+    # =====================================================================
+
     def generate(
-        self, 
+        self,
         articles_by_org: dict[str, list[Article]],
         executive_summary: str,
         date_range: str,
@@ -40,223 +77,621 @@ class DocumentGenerator:
         geographic_summary: dict = None,
         key_numbers: str = ""
     ) -> Path:
-        """
-        Generate a comprehensive Word document report.
-        
-        Args:
-            articles_by_org: Dictionary mapping organization short_name to articles
-            executive_summary: AI-generated executive summary
-            date_range: String describing the date range
-            output_path: Optional output path
-            tldr_top5: TL;DR Top 5 section content
-            cross_source_synthesis: Cross-source analysis content
-            theme_summary: Dictionary of themes and their articles
-            sentiment_analysis: Sentiment analysis content
-            actionable_implications: Implications for stakeholders
-            geographic_summary: Regional breakdown
-            key_numbers: Key economic indicators
-        
-        Returns:
-            Path to the generated document
-        """
+        """Generate a comprehensive Word document report."""
         self.doc = Document()
-        self._setup_styles()
-        
-        # Title Page
-        self._add_title_page(date_range)
-        
-        # TL;DR Top 5 Section (first for quick readers)
+        self._setup_document()
+
+        # === PAGE 1: Cover ===
+        self._add_cover_page(date_range)
+
+        # === PAGE 2: Table of Contents ===
+        self._add_table_of_contents()
+
+        # === SECTION 1: TL;DR Top 5 ===
         if tldr_top5:
-            self._add_tldr_section(tldr_top5)
-        
-        # Key Numbers Dashboard
+            self._add_section_header("TOP 5 THINGS TO KNOW THIS WEEK", "1")
+            self._add_tldr_content(tldr_top5)
+            self.doc.add_page_break()
+
+        # === SECTION 2: Key Numbers ===
         if key_numbers:
-            self._add_key_numbers_section(key_numbers)
-        
-        # Sentiment Analysis
+            self._add_section_header("KEY ECONOMIC NUMBERS", "2")
+            self._add_formatted_text(key_numbers)
+
+        # === SECTION 3: Sentiment ===
         if sentiment_analysis:
-            self._add_sentiment_section(sentiment_analysis)
-        
-        # Executive Summary
-        self._add_executive_summary(executive_summary)
-        
-        # Cross-Source Intelligence Section
+            self._add_section_header("MARKET SENTIMENT", "3")
+            self._add_sentiment_content(sentiment_analysis)
+
+        # === SECTION 4: Executive Summary ===
+        self._add_section_header("EXECUTIVE SUMMARY", "4")
+        self._add_formatted_text(executive_summary)
+        self.doc.add_page_break()
+
+        # === SECTION 5: Cross-Source Intelligence ===
         if cross_source_synthesis:
-            self._add_cross_source_section(cross_source_synthesis)
-        
-        # Actionable Implications
+            self._add_section_header("CROSS-SOURCE INTELLIGENCE", "5")
+            self._add_intro_text("Analysis of consensus and divergent views across organizations.")
+            self._add_formatted_text(cross_source_synthesis)
+
+        # === SECTION 6: Actionable Implications ===
         if actionable_implications:
-            self._add_implications_section(actionable_implications)
-        
-        # Geographic Breakdown
+            self._add_section_header("ACTIONABLE IMPLICATIONS", "6")
+            self._add_intro_text("Practical considerations for key stakeholders.")
+            self._add_formatted_text(actionable_implications)
+            self.doc.add_page_break()
+
+        # === SECTION 7: Geographic Breakdown ===
         if geographic_summary:
-            self._add_geographic_section(geographic_summary)
-        
-        # Theme-Based Summary Section
+            self._add_section_header("REGIONAL BREAKDOWN", "7")
+            self._add_geographic_content(geographic_summary)
+
+        # === SECTION 8: Thematic Overview ===
         if theme_summary:
-            self._add_theme_section(theme_summary)
-        
-        # Table of Contents placeholder
-        self._add_toc_placeholder()
-        
-        # Group organizations by category
+            self._add_section_header("THEMATIC OVERVIEW", "8")
+            self._add_theme_content(theme_summary)
+            self.doc.add_page_break()
+
+        # === DETAILED COVERAGE BY ORGANIZATION ===
         orgs_by_category = self._group_by_category(articles_by_org)
-        
-        # Generate sections for each category
+        section_num = 9
         for category in self._get_category_order():
             if category in orgs_by_category:
-                self._add_category_section(category, orgs_by_category[category])
-        
-        # Save document
+                self._add_category_section(category, orgs_by_category[category], str(section_num))
+                section_num += 1
+
+        # Save
         if output_path is None:
             Settings.ensure_output_dir()
             output_path = Settings.OUTPUT_DIR / f"Global_Pulse_Weekly_Report_{datetime.now().strftime('%Y%m%d')}.docx"
-        
+
         self.doc.save(output_path)
         logger.info(f"Document saved: {output_path}")
-        
         return output_path
-    
-    def _setup_styles(self):
-        """Set up document styles."""
-        styles = self.doc.styles
-        
-        # Title style
-        if 'Report Title' not in [s.name for s in styles]:
-            title_style = styles.add_style('Report Title', WD_STYLE_TYPE.PARAGRAPH)
-            title_style.font.size = Pt(28)
-            title_style.font.bold = True
-            title_style.font.color.rgb = RGBColor(0, 51, 102)
-            title_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            title_style.paragraph_format.space_after = Pt(12)
-        
-        # Subtitle style
-        if 'Report Subtitle' not in [s.name for s in styles]:
-            subtitle_style = styles.add_style('Report Subtitle', WD_STYLE_TYPE.PARAGRAPH)
-            subtitle_style.font.size = Pt(14)
-            subtitle_style.font.italic = True
-            subtitle_style.font.color.rgb = RGBColor(102, 102, 102)
-            subtitle_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    def _add_title_page(self, date_range: str):
-        """Add the title page."""
-        # Add some spacing at top
-        for _ in range(3):
-            self.doc.add_paragraph()
-        
+
+    # =====================================================================
+    # DOCUMENT SETUP
+    # =====================================================================
+
+    def _setup_document(self):
+        """Set up document defaults: font, margins, styles."""
+        # Set default font for entire document
+        style = self.doc.styles['Normal']
+        font = style.font
+        font.name = FONT_FAMILY
+        font.size = BODY_SIZE
+        font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+
+        # Set paragraph defaults
+        pf = style.paragraph_format
+        pf.space_after = Pt(6)
+        pf.space_before = Pt(2)
+        pf.line_spacing = 1.15
+
+        # Configure heading styles
+        for level in range(1, 4):
+            heading_style = self.doc.styles[f'Heading {level}']
+            heading_style.font.name = FONT_FAMILY
+            heading_style.font.color.rgb = NAVY
+
+            if level == 1:
+                heading_style.font.size = Pt(18)
+                heading_style.paragraph_format.space_before = Pt(24)
+                heading_style.paragraph_format.space_after = Pt(10)
+            elif level == 2:
+                heading_style.font.size = Pt(14)
+                heading_style.paragraph_format.space_before = Pt(18)
+                heading_style.paragraph_format.space_after = Pt(8)
+            elif level == 3:
+                heading_style.font.size = Pt(12)
+                heading_style.font.color.rgb = ACCENT_BLUE
+                heading_style.paragraph_format.space_before = Pt(12)
+                heading_style.paragraph_format.space_after = Pt(6)
+
+        # Set page margins
+        for section in self.doc.sections:
+            section.top_margin = Cm(2.0)
+            section.bottom_margin = Cm(2.0)
+            section.left_margin = Cm(2.5)
+            section.right_margin = Cm(2.5)
+
+        # Add page numbers in footer
+        self._add_page_numbers()
+
+    def _add_page_numbers(self):
+        """Add page numbers to footer."""
+        section = self.doc.sections[0]
+        footer = section.footer
+        footer.is_linked_to_previous = False
+
+        p = footer.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # "The Global Pulse" text
+        run = p.add_run("The Global Pulse  |  ")
+        run.font.size = Pt(8)
+        run.font.color.rgb = LIGHT_GREY
+        run.font.name = FONT_FAMILY
+
+        # Page number field
+        run2 = p.add_run("Page ")
+        run2.font.size = Pt(8)
+        run2.font.color.rgb = LIGHT_GREY
+        run2.font.name = FONT_FAMILY
+
+        # Insert PAGE field
+        fld_xml = (
+            '<w:fldSimple {} w:instr=" PAGE "><w:r><w:t>0</w:t></w:r></w:fldSimple>'
+        ).format(nsdecls('w'))
+        fld_elem = parse_xml(fld_xml)
+        p._p.append(fld_elem)
+
+    # =====================================================================
+    # COVER PAGE
+    # =====================================================================
+
+    def _add_cover_page(self, date_range: str):
+        """Add a professional cover page."""
+        # Top spacer
+        for _ in range(4):
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.space_before = Pt(0)
+
         # Title
         title = self.doc.add_paragraph()
-        title.add_run("THE GLOBAL PULSE").bold = True
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title.runs[0].font.size = Pt(32)
-        title.runs[0].font.color.rgb = RGBColor(0, 51, 102)
-        
+        run = title.add_run("THE GLOBAL PULSE")
+        run.font.size = Pt(36)
+        run.font.bold = True
+        run.font.color.rgb = NAVY
+        run.font.name = FONT_FAMILY
+        title.paragraph_format.space_after = Pt(4)
+
+        # Decorative line
+        line = self.doc.add_paragraph()
+        line.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = line.add_run("_" * 40)
+        run.font.color.rgb = ACCENT_BLUE
+        run.font.size = Pt(12)
+        line.paragraph_format.space_after = Pt(8)
+
         # Subtitle
-        subtitle = self.doc.add_paragraph()
-        subtitle.add_run("Weekly Economic Intelligence Report")
-        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        subtitle.runs[0].font.size = Pt(16)
-        subtitle.runs[0].font.color.rgb = RGBColor(0, 51, 102)
-        
+        sub = self.doc.add_paragraph()
+        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = sub.add_run("Weekly Economic Intelligence Report")
+        run.font.size = Pt(16)
+        run.font.color.rgb = DARK_BLUE
+        run.font.name = FONT_FAMILY
+        sub.paragraph_format.space_after = Pt(20)
+
         # Date range
         date_p = self.doc.add_paragraph()
-        date_p.add_run(date_range)
         date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        date_p.runs[0].font.size = Pt(14)
-        date_p.runs[0].font.italic = True
-        date_p.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Spacer
-        self.doc.add_paragraph()
-        self.doc.add_paragraph()
-        
+        run = date_p.add_run(date_range)
+        run.font.size = Pt(14)
+        run.font.italic = True
+        run.font.color.rgb = GREY_TEXT
+        run.font.name = FONT_FAMILY
+        date_p.paragraph_format.space_after = Pt(40)
+
         # Description
         desc = self.doc.add_paragraph()
-        desc.add_run(
-            "360-Degree Analysis of Global Economic Developments\n"
-            "Covering 39 Leading Organizations Worldwide\n\n"
-            "Macro & Micro Indicators | Policy Implications | Industry Insights"
-        )
         desc.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        desc.runs[0].font.size = Pt(11)
-        
-        # Page break
+        for text in [
+            "360-Degree Analysis of Global Economic Developments",
+            "Covering 39 Leading Organizations Worldwide",
+            "",
+            "Macro & Micro Indicators  |  Policy Implications  |  Industry Insights",
+        ]:
+            run = desc.add_run(text + "\n")
+            run.font.size = Pt(11)
+            run.font.color.rgb = GREY_TEXT
+            run.font.name = FONT_FAMILY
+
+        # Powered by
+        powered = self.doc.add_paragraph()
+        powered.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        powered.paragraph_format.space_before = Pt(60)
+        run = powered.add_run("Powered by NVIDIA NIM 7-Model Architecture")
+        run.font.size = Pt(9)
+        run.font.italic = True
+        run.font.color.rgb = LIGHT_GREY
+
         self.doc.add_page_break()
-    
-    def _add_executive_summary(self, summary: str):
-        """Add executive summary section."""
-        self.doc.add_heading("Executive Summary", level=1)
-        
-        # Add summary paragraphs
-        for para in summary.split('\n\n'):
-            if para.strip():
-                p = self.doc.add_paragraph(para.strip())
-                p.paragraph_format.space_after = Pt(12)
-        
+
+    # =====================================================================
+    # TABLE OF CONTENTS
+    # =====================================================================
+
+    def _add_table_of_contents(self):
+        """Add a Table of Contents page."""
+        h = self.doc.add_heading("TABLE OF CONTENTS", level=1)
+
+        toc_items = [
+            ("1.", "Top 5 Things to Know This Week"),
+            ("2.", "Key Economic Numbers"),
+            ("3.", "Market Sentiment"),
+            ("4.", "Executive Summary"),
+            ("5.", "Cross-Source Intelligence"),
+            ("6.", "Actionable Implications"),
+            ("7.", "Regional Breakdown"),
+            ("8.", "Thematic Overview"),
+            ("9+", "Detailed Coverage by Organization"),
+        ]
+
+        for num, title in toc_items:
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(4)
+            p.paragraph_format.space_before = Pt(4)
+            p.paragraph_format.left_indent = Inches(0.3)
+
+            num_run = p.add_run(f"{num}  ")
+            num_run.font.bold = True
+            num_run.font.size = Pt(11)
+            num_run.font.color.rgb = ACCENT_BLUE
+
+            title_run = p.add_run(title)
+            title_run.font.size = Pt(11)
+
         self.doc.add_page_break()
-    
-    def _add_toc_placeholder(self):
-        """Add table of contents placeholder."""
-        self.doc.add_heading("Table of Contents", level=1)
-        
+
+    # =====================================================================
+    # SECTION HEADERS
+    # =====================================================================
+
+    def _add_section_header(self, title: str, number: str = ""):
+        """Add a visually distinct section header with background shading."""
+        # Add a heading
+        display_title = f"{number}. {title}" if number else title
+        h = self.doc.add_heading(display_title, level=1)
+
+        # Add shading to the heading paragraph
+        shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{SHADE_SECTION_BG}"/>')
+        h.paragraph_format.element.get_or_add_pPr().append(shading)
+
+        # Add thin accent line below
+        line = self.doc.add_paragraph()
+        line.paragraph_format.space_after = Pt(8)
+        line.paragraph_format.space_before = Pt(0)
+
+    def _add_intro_text(self, text: str):
+        """Add italic intro/description text below a section header."""
         p = self.doc.add_paragraph()
-        p.add_run("1. Executive Summary").bold = True
-        self.doc.add_paragraph()
-        
-        p = self.doc.add_paragraph()
-        p.add_run("2. International Organizations").bold = True
-        self.doc.add_paragraph()
-        
-        p = self.doc.add_paragraph()
-        p.add_run("3. Consulting Firms & Research").bold = True
-        self.doc.add_paragraph()
-        
-        p = self.doc.add_paragraph()
-        p.add_run("4. Think Tanks & Institutes").bold = True
-        self.doc.add_paragraph()
-        
-        p = self.doc.add_paragraph()
-        p.add_run("5. News & Data Providers").bold = True
-        self.doc.add_paragraph()
-        
-        p = self.doc.add_paragraph()
-        p.add_run("6. India-Specific Sources").bold = True
-        
-        self.doc.add_page_break()
-    
-    def _group_by_category(self, articles_by_org: dict) -> dict[str, dict[str, list[Article]]]:
+        run = p.add_run(text)
+        run.font.italic = True
+        run.font.color.rgb = GREY_TEXT
+        run.font.size = SMALL_SIZE
+        p.paragraph_format.space_after = Pt(10)
+
+    # =====================================================================
+    # MARKDOWN-TO-WORD PARSER
+    # =====================================================================
+
+    def _add_formatted_text(self, text: str):
+        """
+        Parse markdown-like text and render it properly in Word.
+        Handles: **bold**, *italic*, - bullets, ## headers, numbered lists.
+        """
+        if not text:
+            return
+
+        paragraphs = text.split('\n')
+        current_paragraph = None
+
+        for line in paragraphs:
+            stripped = line.strip()
+            if not stripped:
+                current_paragraph = None  # Reset on blank line
+                continue
+
+            # Heading lines: **SOME HEADER** or ## Header
+            if (stripped.startswith('**') and stripped.endswith('**') and
+                    stripped.count('**') == 2):
+                inner = stripped[2:-2].strip()
+                p = self.doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(12)
+                p.paragraph_format.space_after = Pt(4)
+                run = p.add_run(inner)
+                run.font.bold = True
+                run.font.size = Pt(11)
+                run.font.color.rgb = DARK_BLUE
+                current_paragraph = None
+                continue
+
+            if stripped.startswith('## '):
+                p = self.doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(12)
+                run = p.add_run(stripped[3:])
+                run.font.bold = True
+                run.font.size = Pt(11)
+                run.font.color.rgb = DARK_BLUE
+                current_paragraph = None
+                continue
+
+            # Bullet points: - text or * text
+            if stripped.startswith('- ') or stripped.startswith('* '):
+                p = self.doc.add_paragraph()
+                p.paragraph_format.left_indent = Inches(0.3)
+                p.paragraph_format.space_after = Pt(3)
+                p.paragraph_format.space_before = Pt(1)
+                bullet_text = stripped[2:]
+                self._add_inline_formatted_run(p, "  " + bullet_text)
+                current_paragraph = None
+                continue
+
+            # Numbered items: 1. text, 2. text
+            num_match = re.match(r'^(\d+)\.\s+(.+)', stripped)
+            if num_match:
+                p = self.doc.add_paragraph()
+                p.paragraph_format.left_indent = Inches(0.3)
+                p.paragraph_format.space_after = Pt(3)
+                num_run = p.add_run(f"{num_match.group(1)}. ")
+                num_run.font.bold = True
+                self._add_inline_formatted_run(p, num_match.group(2))
+                current_paragraph = None
+                continue
+
+            # Regular paragraph with inline formatting
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(6)
+            self._add_inline_formatted_run(p, stripped)
+            current_paragraph = p
+
+    def _add_inline_formatted_run(self, paragraph, text: str):
+        """
+        Parse inline **bold** and *italic* markers within a line
+        and add properly formatted runs to the paragraph.
+        """
+        # Split on **bold** markers
+        parts = re.split(r'(\*\*.*?\*\*)', text)
+
+        for part in parts:
+            if not part:
+                continue
+
+            if part.startswith('**') and part.endswith('**'):
+                # Bold text
+                inner = part[2:-2]
+                # Check for nested *italic* inside bold
+                italic_parts = re.split(r'(\*.*?\*)', inner)
+                for ip in italic_parts:
+                    if ip.startswith('*') and ip.endswith('*'):
+                        run = paragraph.add_run(ip[1:-1])
+                        run.font.bold = True
+                        run.font.italic = True
+                    else:
+                        run = paragraph.add_run(ip)
+                        run.font.bold = True
+            else:
+                # Check for *italic* in non-bold text
+                italic_parts = re.split(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', part)
+                for i, ip in enumerate(italic_parts):
+                    run = paragraph.add_run(ip)
+                    if i % 2 == 1:
+                        run.font.italic = True
+
+    # =====================================================================
+    # TL;DR TOP 5
+    # =====================================================================
+
+    def _add_tldr_content(self, content: str):
+        """Add TL;DR Top 5 with color-coded priority indicators."""
+        self._add_intro_text("The most important developments ranked by impact score.")
+
+        for line in content.split('\n'):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(8)
+            p.paragraph_format.left_indent = Inches(0.2)
+
+            # Determine priority level and apply formatting
+            if any(marker in stripped for marker in ['[CRITICAL]', chr(0x1F534)]):
+                clean = stripped.replace(chr(0x1F534), '').strip()
+                tag = p.add_run("[CRITICAL] ")
+                tag.font.bold = True
+                tag.font.color.rgb = RED
+                tag.font.size = BODY_SIZE
+                self._add_inline_formatted_run(p, clean)
+                # Add background shading
+                shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{SHADE_CRITICAL}"/>')
+                p.paragraph_format.element.get_or_add_pPr().append(shading)
+
+            elif any(marker in stripped for marker in ['[IMPORTANT]', chr(0x1F7E0)]):
+                clean = stripped.replace(chr(0x1F7E0), '').strip()
+                tag = p.add_run("[IMPORTANT] ")
+                tag.font.bold = True
+                tag.font.color.rgb = ORANGE
+                tag.font.size = BODY_SIZE
+                self._add_inline_formatted_run(p, clean)
+                shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{SHADE_IMPORTANT}"/>')
+                p.paragraph_format.element.get_or_add_pPr().append(shading)
+
+            elif any(marker in stripped for marker in ['[NOTABLE]', chr(0x1F7E2)]):
+                clean = stripped.replace(chr(0x1F7E2), '').strip()
+                tag = p.add_run("[NOTABLE] ")
+                tag.font.bold = True
+                tag.font.color.rgb = GREEN
+                tag.font.size = BODY_SIZE
+                self._add_inline_formatted_run(p, clean)
+            else:
+                self._add_inline_formatted_run(p, stripped)
+
+    # =====================================================================
+    # SENTIMENT
+    # =====================================================================
+
+    def _add_sentiment_content(self, content: str):
+        """Add sentiment analysis with color-coded indicators."""
+        self._add_intro_text("Overall economic sentiment based on this week's coverage.")
+
+        for line in content.split('\n'):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(4)
+
+            # Detect sentiment markers
+            if 'BULLISH' in stripped.upper():
+                clean = stripped.replace(chr(0x1F7E2), '[BULLISH]')
+                run = p.add_run(clean)
+                run.font.bold = True
+                run.font.color.rgb = GREEN
+            elif 'BEARISH' in stripped.upper():
+                clean = stripped.replace(chr(0x1F534), '[BEARISH]')
+                run = p.add_run(clean)
+                run.font.bold = True
+                run.font.color.rgb = RED
+            elif 'NEUTRAL' in stripped.upper():
+                clean = stripped.replace(chr(0x1F7E1), '[NEUTRAL]')
+                run = p.add_run(clean)
+                run.font.bold = True
+                run.font.color.rgb = ORANGE
+            elif stripped.startswith('**'):
+                self._add_inline_formatted_run(p, stripped)
+            elif stripped.startswith('- ') or stripped.startswith('* '):
+                p.paragraph_format.left_indent = Inches(0.3)
+                self._add_inline_formatted_run(p, "  " + stripped[2:])
+            else:
+                self._add_inline_formatted_run(p, stripped)
+
+    # =====================================================================
+    # GEOGRAPHIC BREAKDOWN
+    # =====================================================================
+
+    def _add_geographic_content(self, geographic: dict):
+        """Add geographic summary as a proper Word table."""
+        if not geographic:
+            return
+
+        self._add_intro_text("Coverage by geographic region.")
+
+        # Create a table
+        regions_with_data = {k: v for k, v in geographic.items() if v.get('count', 0) > 0}
+        if not regions_with_data:
+            return
+
+        table = self.doc.add_table(rows=1, cols=4)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Header row
+        headers = ['Region', 'Articles', 'Sources', 'Top Headlines']
+        for i, header in enumerate(headers):
+            cell = table.rows[0].cells[i]
+            cell.text = header
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                    run.font.size = Pt(10)
+                    run.font.name = FONT_FAMILY
+            # Dark background
+            shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{SHADE_TITLE_BG}"/>')
+            cell._tc.get_or_add_tcPr().append(shading)
+
+        region_labels = {
+            'Global': 'Global',
+            'Americas': 'Americas',
+            'Europe': 'Europe',
+            'Asia-Pacific': 'Asia-Pacific',
+            'India': 'India',
+        }
+
+        for region, data in regions_with_data.items():
+            row = table.add_row()
+            row.cells[0].text = region_labels.get(region, region)
+            row.cells[1].text = str(data.get('count', 0))
+            row.cells[2].text = ", ".join(data.get('sources', [])[:4])
+            headlines = data.get('headlines', [])[:2]
+            row.cells[3].text = "\n".join([f"- {h[:60]}..." for h in headlines]) if headlines else "—"
+
+            # Format cells
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(9)
+                        run.font.name = FONT_FAMILY
+
+        # Set column widths
+        widths = [Inches(1.2), Inches(0.8), Inches(2.0), Inches(3.0)]
+        for i, width in enumerate(widths):
+            for row in table.rows:
+                row.cells[i].width = width
+
+        self.doc.add_paragraph()  # Spacer after table
+
+    # =====================================================================
+    # THEMATIC OVERVIEW
+    # =====================================================================
+
+    def _add_theme_content(self, theme_summary: dict):
+        """Add theme-based summary with clean formatting."""
+        if not theme_summary:
+            return
+
+        self._add_intro_text("Articles grouped by economic theme.")
+
+        for theme, data in theme_summary.items():
+            # Theme heading
+            p = self.doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(10)
+            p.paragraph_format.space_after = Pt(2)
+            run = p.add_run(f">> {theme}")
+            run.font.bold = True
+            run.font.size = Pt(11)
+            run.font.color.rgb = DARK_BLUE
+
+            # Stats line
+            stats = self.doc.add_paragraph()
+            stats.paragraph_format.left_indent = Inches(0.3)
+            stats.paragraph_format.space_after = Pt(2)
+            run = stats.add_run(
+                f"{data['count']} items from {len(data['sources'])} sources: "
+                + ", ".join(data['sources'][:5])
+            )
+            run.font.size = SMALL_SIZE
+            run.font.color.rgb = GREY_TEXT
+
+            # Headlines
+            for headline in data.get('headlines', [])[:3]:
+                hl = self.doc.add_paragraph()
+                hl.paragraph_format.left_indent = Inches(0.5)
+                hl.paragraph_format.space_after = Pt(1)
+                run = hl.add_run(f"- {headline[:80]}")
+                run.font.size = SMALL_SIZE
+
+    # =====================================================================
+    # ORGANIZATION & ARTICLE SECTIONS
+    # =====================================================================
+
+    def _group_by_category(self, articles_by_org: dict) -> dict:
         """Group organizations by their category."""
         orgs_by_category = {}
-        
         for org_name, articles in articles_by_org.items():
             if not articles:
                 continue
-            
             category = articles[0].category
             if category not in orgs_by_category:
                 orgs_by_category[category] = {}
             orgs_by_category[category][org_name] = articles
-        
         return orgs_by_category
-    
+
     def _get_category_order(self) -> list[str]:
-        """Get the order of categories for the report."""
         return [
-            'Central Bank',  # Major central banks first
-            'International',
-            'Consulting',
-            'Think Tank',
-            'Investment Bank',
-            'News',
-            'Data Provider',
-            'Rating Agency',
-            'India',
+            'Central Bank', 'International', 'Consulting', 'Think Tank',
+            'Investment Bank', 'News', 'Data Provider', 'Rating Agency', 'India',
         ]
-    
-    def _add_category_section(self, category: str, orgs: dict[str, list[Article]]):
-        """Add a section for a category of organizations."""
-        # Category header
+
+    def _add_category_section(self, category: str, orgs: dict, section_num: str = ""):
+        """Add a category section with all its organizations."""
         category_titles = {
+            'Central Bank': 'Central Banks',
             'International': 'International & Multilateral Organizations',
             'Consulting': 'Consulting Firms & Professional Services',
             'Think Tank': 'Think Tanks & Research Institutes',
@@ -266,376 +701,286 @@ class DocumentGenerator:
             'Rating Agency': 'Credit Rating Agencies',
             'India': 'India-Specific Sources',
         }
-        
-        self.doc.add_heading(category_titles.get(category, category), level=1)
-        
-        # Add each organization
+
+        title = category_titles.get(category, category)
+        self._add_section_header(title, section_num)
+
+        total_articles = sum(len(arts) for arts in orgs.values())
+        self._add_intro_text(
+            f"{len(orgs)} organizations  |  {total_articles} articles this week"
+        )
+
         for org_name, articles in sorted(orgs.items()):
             self._add_organization_section(org_name, articles)
-        
+
         self.doc.add_page_break()
-    
+
     def _add_organization_section(self, org_name: str, articles: list[Article]):
         """Add a section for a single organization."""
         if not articles:
             return
-        
-        # Organization name as heading
+
+        # Organization heading
         full_name = articles[0].source_full
         self.doc.add_heading(full_name, level=2)
-        
-        # Summary count
+
+        # Item count
         p = self.doc.add_paragraph()
-        p.add_run(f"{len(articles)} items this week").italic = True
-        p.runs[0].font.size = Pt(10)
-        p.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Add "Major Findings & Analysis" header if there are major items
-        has_major = any(a.ai_analysis for a in articles)
-        if has_major:
-            findings_header = self.doc.add_paragraph()
-            findings_header.add_run("MAJOR FINDINGS & ANALYSIS").bold = True
-            findings_header.runs[0].font.size = Pt(11)
-            findings_header.runs[0].font.color.rgb = RGBColor(0, 102, 153)
-        
-        # Add each article
+        run = p.add_run(f"{len(articles)} items this week")
+        run.font.italic = True
+        run.font.size = SMALL_SIZE
+        run.font.color.rgb = GREY_TEXT
+        p.paragraph_format.space_after = Pt(8)
+
+        # Articles
         for article in articles:
             self._add_article(article)
-    
+
     def _add_article(self, article: Article):
-        """Add a single article to the document."""
-        # Article title
+        """Add a single article with proper formatting and visual separation."""
+
+        # --- Article Title ---
         p = self.doc.add_paragraph()
-        run = p.add_run(f"• {article.title}")
-        run.bold = True
-        run.font.size = Pt(11)
-        
-        # Date if available
+        p.paragraph_format.space_before = Pt(10)
+        p.paragraph_format.space_after = Pt(3)
+
+        # Importance indicator
+        if article.importance_score >= 8:
+            tag = p.add_run("[CRITICAL] ")
+            tag.font.bold = True
+            tag.font.color.rgb = RED
+            tag.font.size = CAPTION_SIZE
+        elif article.importance_score >= 5:
+            tag = p.add_run("[IMPORTANT] ")
+            tag.font.bold = True
+            tag.font.color.rgb = ORANGE
+            tag.font.size = CAPTION_SIZE
+
+        # Title
+        title_run = p.add_run(article.title)
+        title_run.bold = True
+        title_run.font.size = Pt(11)
+
+        # Date
         if article.published_date:
             date_run = p.add_run(f"  ({article.published_date.strftime('%b %d, %Y')})")
-            date_run.font.size = Pt(9)
-            date_run.font.color.rgb = RGBColor(102, 102, 102)
-        
+            date_run.font.size = CAPTION_SIZE
+            date_run.font.color.rgb = GREY_TEXT
+
         # Deep analysis badge
         if article.verification_status == "deep_verified" and article.deep_analysis:
-            badge_run = p.add_run("  📄 Full Report Analyzed")
-            badge_run.font.size = Pt(8)
-            badge_run.font.color.rgb = RGBColor(0, 128, 0)
-            badge_run.italic = True
-        
-        # AI Summary (one-liner)
+            badge = p.add_run("  [Full Report Analyzed]")
+            badge.font.size = CAPTION_SIZE
+            badge.font.color.rgb = GREEN
+            badge.font.italic = True
+
+        # --- AI Summary ---
         if article.ai_summary:
             summary_p = self.doc.add_paragraph()
-            summary_p.add_run(article.ai_summary)
-            summary_p.runs[0].font.size = Pt(10)
             summary_p.paragraph_format.left_indent = Inches(0.25)
-        
-        # ============================================================
-        # DEEP ANALYSIS SECTIONS (for reports that were deeply analyzed)
-        # ============================================================
+            summary_p.paragraph_format.space_after = Pt(4)
+            run = summary_p.add_run(article.ai_summary)
+            run.font.size = Pt(10)
+
+        # --- Deep Analysis Content ---
         if article.deep_analysis and article.deep_analysis.get('success'):
-            deep = article.deep_analysis
-            
-            # Key Statistics Extracted
-            if deep.get('key_statistics'):
-                stats_p = self.doc.add_paragraph()
-                stats_header = stats_p.add_run("📊 KEY STATISTICS EXTRACTED:\n")
-                stats_header.bold = True
-                stats_header.font.size = Pt(10)
-                stats_header.font.color.rgb = RGBColor(0, 51, 102)
-                
-                for stat in deep['key_statistics'][:8]:  # Limit to 8
-                    stats_p.add_run(f"• {stat}\n")
-                stats_p.paragraph_format.left_indent = Inches(0.25)
-            
-            # Chart Descriptions
-            if deep.get('chart_descriptions'):
-                charts_p = self.doc.add_paragraph()
-                charts_header = charts_p.add_run("📈 CHARTS ANALYZED:\n")
-                charts_header.bold = True
-                charts_header.font.size = Pt(10)
-                charts_header.font.color.rgb = RGBColor(0, 51, 102)
-                
-                for i, desc in enumerate(deep['chart_descriptions'][:3], 1):
-                    chart_run = charts_p.add_run(f"[Chart {i}] ")
-                    chart_run.bold = True
-                    charts_p.add_run(f"{desc}\n\n")
-                charts_p.paragraph_format.left_indent = Inches(0.25)
-            
-            # Table Summaries
-            if deep.get('table_summaries'):
-                tables_p = self.doc.add_paragraph()
-                tables_header = tables_p.add_run("📋 KEY TABLES:\n")
-                tables_header.bold = True
-                tables_header.font.size = Pt(10)
-                tables_header.font.color.rgb = RGBColor(0, 51, 102)
-                
-                for table_md in deep['table_summaries'][:3]:  # Limit to 3 tables
-                    # Simplified table display (full markdown tables don't render in Word)
-                    tables_p.add_run(f"{table_md[:300]}...\n\n")
-                tables_p.paragraph_format.left_indent = Inches(0.25)
-        
-        # AI Analysis (detailed - only for major items)
+            self._add_deep_analysis_content(article.deep_analysis)
+
+        # --- AI Analysis (detailed) ---
         if article.ai_analysis:
-            analysis_p = self.doc.add_paragraph()
-            
-            # Parse and add formatted analysis
-            for line in article.ai_analysis.split('\n'):
-                if line.strip():
-                    # Handle bold headers
-                    if line.startswith('**') and line.endswith('**'):
-                        run = analysis_p.add_run(line.strip('*') + '\n')
-                        run.bold = True
-                    elif '**' in line:
-                        # Handle inline bold
-                        parts = line.split('**')
-                        for i, part in enumerate(parts):
-                            run = analysis_p.add_run(part)
-                            if i % 2 == 1:  # Odd indices are bold
-                                run.bold = True
-                        analysis_p.add_run('\n')
-                    else:
-                        analysis_p.add_run(line + '\n')
-            
-            analysis_p.paragraph_format.left_indent = Inches(0.25)
-            analysis_p.runs[0].font.size = Pt(10) if analysis_p.runs else None
-        
-        # Link
-        link_p = self.doc.add_paragraph()
-        link_p.add_run("Read more: ")
-        link_run = link_p.add_run(article.url)
-        link_run.font.size = Pt(9)
-        link_run.font.color.rgb = RGBColor(0, 102, 204)
-        link_run.underline = True
-        link_p.paragraph_format.left_indent = Inches(0.25)
-        link_p.paragraph_format.space_after = Pt(12)
-    
-    def _add_tldr_section(self, tldr_content: str):
-        """Add TL;DR Top 5 section at the beginning for quick readers."""
-        self.doc.add_heading("TOP 5 THINGS TO KNOW THIS WEEK", level=1)
-        
-        # Add introductory text
-        intro = self.doc.add_paragraph()
-        intro.add_run("The most important developments ranked by impact score. ").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Add the TL;DR content
-        for line in tldr_content.split('\n'):
-            if line.strip():
-                p = self.doc.add_paragraph()
-                # Handle emoji indicators
-                if line.startswith('1.') or '🔴' in line:
-                    run = p.add_run(line.replace('🔴', '[CRITICAL] '))
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(180, 0, 0)
-                elif '🟠' in line:
-                    run = p.add_run(line.replace('🟠', '[IMPORTANT] '))
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(200, 100, 0)
-                elif '🟢' in line:
-                    run = p.add_run(line.replace('🟢', '[NOTABLE] '))
-                    run.font.color.rgb = RGBColor(0, 120, 0)
-                else:
-                    p.add_run(line)
-        
-        self.doc.add_page_break()
-    
-    def _add_cross_source_section(self, cross_source_content: str):
-        """Add cross-source intelligence synthesis section."""
-        self.doc.add_heading("CROSS-SOURCE INTELLIGENCE", level=1)
-        
-        intro = self.doc.add_paragraph()
-        intro.add_run("Analysis of consensus and divergent views across organizations.").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Add the content with markdown parsing
-        for para in cross_source_content.split('\n\n'):
-            if para.strip():
-                p = self.doc.add_paragraph()
-                for line in para.split('\n'):
-                    if line.strip():
-                        if line.startswith('**') and line.endswith('**'):
-                            run = p.add_run(line.strip('*') + '\n')
-                            run.bold = True
-                            run.font.color.rgb = RGBColor(0, 51, 102)
-                        elif '**' in line:
-                            parts = line.split('**')
-                            for i, part in enumerate(parts):
-                                run = p.add_run(part)
-                                if i % 2 == 1:
-                                    run.bold = True
-                            p.add_run('\n')
-                        else:
-                            p.add_run(line + '\n')
-        
-        self.doc.add_paragraph()
-    
-    def _add_theme_section(self, theme_summary: dict):
-        """Add theme-based summary section."""
-        if not theme_summary:
-            return
-            
-        self.doc.add_heading("THEMATIC OVERVIEW", level=1)
-        
-        intro = self.doc.add_paragraph()
-        intro.add_run("Articles grouped by economic theme for quick navigation.").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        for theme, data in theme_summary.items():
-            # Theme sub-heading
-            theme_p = self.doc.add_paragraph()
-            theme_run = theme_p.add_run(f"➤ {theme}")
-            theme_run.bold = True
-            theme_run.font.size = Pt(12)
-            theme_run.font.color.rgb = RGBColor(0, 51, 102)
-            
-            # Stats
-            stats_p = self.doc.add_paragraph()
-            stats_p.add_run(
-                f"   {data['count']} items from {len(data['sources'])} sources: " + 
-                ", ".join(data['sources'][:5])
-            )
-            stats_p.runs[0].font.size = Pt(10)
-            stats_p.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-            
-            # Top headlines
-            for headline in data['headlines'][:3]:
-                hl_p = self.doc.add_paragraph()
-                hl_p.add_run(f"   • {headline[:80]}...")
-                hl_p.runs[0].font.size = Pt(9)
-        
-        self.doc.add_page_break()
-    
-    def _add_key_numbers_section(self, key_numbers: str):
-        """Add key economic numbers dashboard section."""
-        self.doc.add_heading("KEY ECONOMIC NUMBERS", level=1)
-        
-        intro = self.doc.add_paragraph()
-        intro.add_run("Latest available economic indicators from major economies.").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Parse and add the content
-        for line in key_numbers.split('\n'):
-            if line.strip():
-                p = self.doc.add_paragraph()
-                if line.startswith('**'):
-                    run = p.add_run(line.strip('*'))
-                    run.bold = True
-                    run.font.size = Pt(12)
-                elif line.startswith('•'):
-                    run = p.add_run(line)
-                    run.font.size = Pt(11)
-                else:
-                    run = p.add_run(line)
+            # Render as properly formatted paragraphs
+            analysis_lines = article.ai_analysis.split('\n')
+            for line in analysis_lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                ap = self.doc.add_paragraph()
+                ap.paragraph_format.left_indent = Inches(0.25)
+                ap.paragraph_format.space_after = Pt(3)
+
+                if stripped.startswith('**') and stripped.endswith('**'):
+                    run = ap.add_run(stripped.strip('*'))
+                    run.font.bold = True
                     run.font.size = Pt(10)
-                    run.font.color.rgb = RGBColor(102, 102, 102)
-    
-    def _add_sentiment_section(self, sentiment: str):
-        """Add sentiment analysis section."""
-        self.doc.add_heading("MARKET SENTIMENT", level=1)
-        
-        intro = self.doc.add_paragraph()
-        intro.add_run("Overall economic sentiment based on this week's coverage.").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Parse and add with color coding
-        for line in sentiment.split('\n'):
-            if line.strip():
-                p = self.doc.add_paragraph()
-                # Color code sentiment indicators
-                if 'BULLISH' in line or '🟢' in line:
-                    run = p.add_run(line.replace('🟢', '[BULLISH] '))
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(0, 128, 0)
-                elif 'BEARISH' in line or '🔴' in line:
-                    run = p.add_run(line.replace('🔴', '[BEARISH] '))
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(180, 0, 0)
-                elif 'NEUTRAL' in line or '🟡' in line:
-                    run = p.add_run(line.replace('🟡', '[NEUTRAL] '))
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(180, 150, 0)
-                elif line.startswith('**'):
-                    run = p.add_run(line.strip('*'))
-                    run.bold = True
+                    run.font.color.rgb = ACCENT_BLUE
+                elif stripped.startswith('- ') or stripped.startswith('* '):
+                    ap.paragraph_format.left_indent = Inches(0.5)
+                    self._add_inline_formatted_run(ap, stripped[2:])
+                    for run in ap.runs:
+                        run.font.size = Pt(10)
                 else:
-                    p.add_run(line)
-        
-        self.doc.add_paragraph()
-    
-    def _add_implications_section(self, implications: str):
-        """Add actionable implications section."""
-        self.doc.add_heading("ACTIONABLE IMPLICATIONS", level=1)
-        
-        intro = self.doc.add_paragraph()
-        intro.add_run("Practical considerations for key stakeholders based on this week's intelligence.").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        # Parse with markdown handling
-        for para in implications.split('\n\n'):
-            if para.strip():
-                p = self.doc.add_paragraph()
-                for line in para.split('\n'):
-                    if line.strip():
-                        if line.startswith('**FOR'):
-                            run = p.add_run(line.strip('*') + '\n')
-                            run.bold = True
-                            run.font.size = Pt(11)
-                            run.font.color.rgb = RGBColor(0, 51, 102)
-                        elif line.startswith('**'):
-                            run = p.add_run(line.strip('*') + '\n')
-                            run.bold = True
-                        elif line.startswith('-'):
-                            p.add_run(line + '\n')
-                        else:
-                            p.add_run(line + '\n')
-        
-        self.doc.add_page_break()
-    
-    def _add_geographic_section(self, geographic: dict):
-        """Add geographic/regional breakdown section."""
-        if not geographic:
+                    self._add_inline_formatted_run(ap, stripped)
+                    for run in ap.runs:
+                        run.font.size = Pt(10)
+
+        # --- Link ---
+        link_p = self.doc.add_paragraph()
+        link_p.paragraph_format.left_indent = Inches(0.25)
+        link_p.paragraph_format.space_after = Pt(6)
+
+        label = link_p.add_run("Source: ")
+        label.font.size = CAPTION_SIZE
+        label.font.color.rgb = GREY_TEXT
+
+        # Add clickable hyperlink
+        self._add_hyperlink(link_p, article.url, article.url[:80] + ("..." if len(article.url) > 80 else ""))
+
+        # --- Visual separator between articles ---
+        sep = self.doc.add_paragraph()
+        sep.paragraph_format.space_before = Pt(2)
+        sep.paragraph_format.space_after = Pt(2)
+        run = sep.add_run("_" * 60)
+        run.font.color.rgb = RGBColor(0xE2, 0xE8, 0xF0)
+        run.font.size = Pt(6)
+
+    def _add_deep_analysis_content(self, deep: dict):
+        """Add deep analysis sections using proper Word formatting."""
+
+        # Key Statistics
+        if deep.get('key_statistics'):
+            header = self.doc.add_paragraph()
+            header.paragraph_format.left_indent = Inches(0.25)
+            header.paragraph_format.space_before = Pt(6)
+            run = header.add_run("[KEY STATISTICS]")
+            run.font.bold = True
+            run.font.size = Pt(10)
+            run.font.color.rgb = ACCENT_BLUE
+
+            for stat in deep['key_statistics'][:8]:
+                sp = self.doc.add_paragraph()
+                sp.paragraph_format.left_indent = Inches(0.5)
+                sp.paragraph_format.space_after = Pt(2)
+                run = sp.add_run(f"- {stat}")
+                run.font.size = SMALL_SIZE
+
+        # Chart Descriptions
+        if deep.get('chart_descriptions'):
+            header = self.doc.add_paragraph()
+            header.paragraph_format.left_indent = Inches(0.25)
+            header.paragraph_format.space_before = Pt(6)
+            run = header.add_run("[CHARTS ANALYZED]")
+            run.font.bold = True
+            run.font.size = Pt(10)
+            run.font.color.rgb = ACCENT_BLUE
+
+            for i, desc in enumerate(deep['chart_descriptions'][:3], 1):
+                cp = self.doc.add_paragraph()
+                cp.paragraph_format.left_indent = Inches(0.5)
+                cp.paragraph_format.space_after = Pt(4)
+                label = cp.add_run(f"Chart {i}: ")
+                label.font.bold = True
+                label.font.size = SMALL_SIZE
+                text = cp.add_run(desc)
+                text.font.size = SMALL_SIZE
+
+        # Table Summaries (as a proper Word table, not raw markdown)
+        if deep.get('table_summaries'):
+            header = self.doc.add_paragraph()
+            header.paragraph_format.left_indent = Inches(0.25)
+            header.paragraph_format.space_before = Pt(6)
+            run = header.add_run("[KEY TABLES]")
+            run.font.bold = True
+            run.font.size = Pt(10)
+            run.font.color.rgb = ACCENT_BLUE
+
+            for table_md in deep['table_summaries'][:3]:
+                self._render_markdown_table(table_md)
+
+    def _render_markdown_table(self, markdown_text: str):
+        """Convert a markdown table to a Word table, or render as text if not parseable."""
+        lines = [l.strip() for l in markdown_text.split('\n') if l.strip()]
+
+        # Filter out separator lines (e.g., |---|---|)
+        data_lines = []
+        for line in lines:
+            if line.startswith('|') and not re.match(r'^\|[\s\-:]+\|', line):
+                cells = [c.strip() for c in line.strip('|').split('|')]
+                data_lines.append(cells)
+            elif not line.startswith('|'):
+                # Not a table line — render as text
+                if line.startswith('**'):
+                    p = self.doc.add_paragraph()
+                    p.paragraph_format.left_indent = Inches(0.5)
+                    self._add_inline_formatted_run(p, line)
+                    for r in p.runs:
+                        r.font.size = SMALL_SIZE
+                    return  # It's a header, not a table
+
+        if len(data_lines) < 2:
+            # Not enough data for a table, render as text
+            p = self.doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.5)
+            run = p.add_run(markdown_text[:300])
+            run.font.size = SMALL_SIZE
             return
-            
-        self.doc.add_heading("REGIONAL BREAKDOWN", level=1)
-        
-        intro = self.doc.add_paragraph()
-        intro.add_run("Coverage by geographic region.").italic = True
-        intro.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-        
-        region_icons = {
-            'Global': '🌍',
-            'Americas': '🇺🇸',
-            'Europe': '🇪🇺',
-            'Asia-Pacific': '🌏',
-            'India': '🇮🇳',
-        }
-        
-        for region, data in geographic.items():
-            if data.get('count', 0) == 0:
-                continue
-                
-            # Region header
-            region_p = self.doc.add_paragraph()
-            icon = region_icons.get(region, '📍')
-            region_run = region_p.add_run(f"{icon} {region}")
-            region_run.bold = True
-            region_run.font.size = Pt(12)
-            region_run.font.color.rgb = RGBColor(0, 51, 102)
-            
-            # Stats
-            stats_p = self.doc.add_paragraph()
-            stats_p.add_run(
-                f"   {data['count']} articles from: " + 
-                ", ".join(data.get('sources', [])[:4])
-            )
-            stats_p.runs[0].font.size = Pt(10)
-            stats_p.runs[0].font.color.rgb = RGBColor(102, 102, 102)
-            
-            # Top headlines
-            for headline in data.get('headlines', [])[:2]:
-                hl_p = self.doc.add_paragraph()
-                hl_p.add_run(f"   • {headline[:70]}...")
-                hl_p.runs[0].font.size = Pt(9)
-        
-        self.doc.add_paragraph()
+
+        # Create Word table
+        num_cols = len(data_lines[0])
+        table = self.doc.add_table(rows=1, cols=num_cols)
+        table.style = 'Table Grid'
+
+        # Header row
+        for i, cell_text in enumerate(data_lines[0]):
+            cell = table.rows[0].cells[i]
+            cell.text = cell_text
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.bold = True
+                    run.font.size = Pt(8)
+                    run.font.name = FONT_FAMILY
+
+        # Data rows
+        for row_data in data_lines[1:]:
+            row = table.add_row()
+            for i, cell_text in enumerate(row_data):
+                if i < num_cols:
+                    row.cells[i].text = cell_text
+                    for paragraph in row.cells[i].paragraphs:
+                        for run in paragraph.runs:
+                            run.font.size = Pt(8)
+                            run.font.name = FONT_FAMILY
+
+        self.doc.add_paragraph()  # Spacer
+
+    # =====================================================================
+    # HYPERLINKS
+    # =====================================================================
+
+    def _add_hyperlink(self, paragraph, url: str, text: str = None):
+        """Add a real clickable hyperlink to a paragraph."""
+        if text is None:
+            text = url
+
+        # Create the relationship
+        part = paragraph.part
+        r_id = part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
+
+        # Build the hyperlink XML
+        hyperlink = parse_xml(
+            f'<w:hyperlink {nsdecls("w")} r:id="{r_id}" '
+            f'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            f'<w:r>'
+            f'<w:rPr>'
+            f'<w:rStyle w:val="Hyperlink"/>'
+            f'<w:color w:val="0563C1"/>'
+            f'<w:u w:val="single"/>'
+            f'<w:sz w:val="{int(CAPTION_SIZE.pt * 2)}"/>'
+            f'<w:rFonts w:ascii="{FONT_FAMILY}" w:hAnsi="{FONT_FAMILY}"/>'
+            f'</w:rPr>'
+            f'<w:t>{self._escape_xml(text)}</w:t>'
+            f'</w:r>'
+            f'</w:hyperlink>'
+        )
+
+        paragraph._p.append(hyperlink)
+
+    @staticmethod
+    def _escape_xml(text: str) -> str:
+        """Escape special characters for XML."""
+        return (text
+                .replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('"', '&quot;')
+                .replace("'", '&apos;'))

@@ -133,6 +133,18 @@ class EmailSender:
         text = text.replace('&gt;', '>')
         return text.strip()
     
+    @staticmethod
+    def _markdown_to_html(text: str) -> str:
+        """Convert markdown bold/italic to HTML tags."""
+        import re
+        # **bold** -> <b>bold</b>
+        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+        # *italic* -> <i>italic</i>
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', text)
+        # Newlines
+        text = text.replace('\n\n', '</p><p style="margin: 8px 0; font-size: 14px;">').replace('\n', '<br>')
+        return text
+
     def send_weekly_report(
         self,
         date_range: str,
@@ -145,45 +157,46 @@ class EmailSender:
     ) -> bool:
         """
         Send the weekly Global Pulse intelligence report.
-        
-        Args:
-            date_range: Date range string
-            total_articles: Total number of articles collected
-            executive_summary: AI-generated executive summary
-            doc_path: Path to Word document
-            excel_path: Path to Excel file
-            tldr_top5: TL;DR Top 5 section for mobile readers
-            sentiment: Sentiment analysis for mobile readers
-        
-        Returns:
-            True if sent successfully
         """
         subject = f"THE GLOBAL PULSE | Weekly Economic Intelligence - {date_range}"
-        
-        # Format the summary for HTML
-        summary_html = executive_summary.replace('\n\n', '</p><p>').replace('\n', '<br>')
-        
-        # Format TL;DR for mobile
+
+        # Parse markdown in summary
+        summary_html = self._markdown_to_html(executive_summary)
+
+        # Format TL;DR
         tldr_html = ""
         if tldr_top5:
             tldr_lines = []
             for line in tldr_top5.split('\n'):
-                if line.strip():
-                    # Color code by priority
-                    if '🔴' in line or 'CRITICAL' in line.upper():
-                        tldr_lines.append(f'<li style="color: #c00; font-weight: bold;">{line}</li>')
-                    elif '🟠' in line or 'IMPORTANT' in line.upper():
-                        tldr_lines.append(f'<li style="color: #d80;">{line}</li>')
-                    else:
-                        tldr_lines.append(f'<li>{line}</li>')
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                clean = self._markdown_to_html(stripped)
+                if any(m in stripped for m in ['CRITICAL', chr(0x1F534)]):
+                    tldr_lines.append(f'<li style="color: #c00; font-weight: bold; margin: 6px 0;">{clean}</li>')
+                elif any(m in stripped for m in ['IMPORTANT', chr(0x1F7E0)]):
+                    tldr_lines.append(f'<li style="color: #d80; margin: 6px 0;">{clean}</li>')
+                else:
+                    tldr_lines.append(f'<li style="margin: 6px 0;">{clean}</li>')
             if tldr_lines:
                 tldr_html = f'''
-                <div class="tldr">
-                    <h3 style="color: #1b3a4b; margin-bottom: 10px;">⚡ TOP 5 THIS WEEK</h3>
-                    <ol style="margin: 0; padding-left: 20px;">{"".join(tldr_lines)}</ol>
+                <div style="background: #fff3cd; padding: 18px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc107;">
+                    <h3 style="color: #1b3a4b; margin: 0 0 12px 0; font-size: 16px;">TOP 5 THIS WEEK</h3>
+                    <ol style="margin: 0; padding-left: 20px; font-size: 14px;">{"".join(tldr_lines)}</ol>
                 </div>
                 '''
-        
+
+        # Format sentiment
+        sentiment_html = ""
+        if sentiment:
+            sentiment_parsed = self._markdown_to_html(sentiment)
+            sentiment_html = f'''
+            <div style="background: #f0f4f8; padding: 18px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #1b3a4b;">
+                <h3 style="color: #1b3a4b; margin: 0 0 10px 0; font-size: 16px;">MARKET SENTIMENT</h3>
+                <p style="margin: 0; font-size: 14px;">{sentiment_parsed}</p>
+            </div>
+            '''
+
         body_html = f"""
         <!DOCTYPE html>
         <html>
@@ -201,8 +214,6 @@ class EmailSender:
                 .stat-number {{ font-size: 28px; font-weight: bold; color: #1b3a4b; }}
                 .stat-label {{ color: #718096; font-size: 12px; }}
                 .footer {{ background: #0d1b2a; color: white; padding: 20px; text-align: center; font-size: 11px; }}
-                .attachments {{ background: #e2e8f0; padding: 15px; border-radius: 8px; margin: 15px 0; }}
-                .tldr {{ background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 14px; }}
                 h2 {{ color: #1b3a4b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; font-size: 18px; }}
                 @media (max-width: 600px) {{
                     .header h1 {{ font-size: 20px; }}
@@ -217,7 +228,7 @@ class EmailSender:
                 <div class="subtitle">Weekly Economic Intelligence</div>
                 <p style="margin: 10px 0 0 0; opacity: 0.8; font-size: 13px;">{date_range}</p>
             </div>
-            
+
             <div class="content">
                 <div class="stats">
                     <div class="stat-box">
@@ -225,40 +236,46 @@ class EmailSender:
                         <div class="stat-label">Articles Analyzed</div>
                     </div>
                     <div class="stat-box">
-                        <div class="stat-number">44</div>
+                        <div class="stat-number">39</div>
                         <div class="stat-label">Organizations</div>
                     </div>
+                    <div class="stat-box">
+                        <div class="stat-number">7</div>
+                        <div class="stat-label">AI Models</div>
+                    </div>
                 </div>
-                
+
                 {tldr_html}
-                
+
+                {sentiment_html}
+
                 <h2>Executive Summary</h2>
                 <div class="summary">
                     <p style="margin: 0; font-size: 14px;">{summary_html}</p>
                 </div>
-                
-                <div class="attachments">
-                    <strong>📎 Full Reports Attached:</strong>
+
+                <div style="background: #e2e8f0; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                    <strong>Full Reports Attached:</strong>
                     <ul style="margin: 10px 0; padding-left: 20px; font-size: 13px;">
-                        <li><strong>{doc_path.name}</strong> - Complete analysis</li>
-                        <li><strong>{excel_path.name}</strong> - All articles with links</li>
+                        <li><strong>{doc_path.name}</strong> — Complete analysis with deep PDF insights</li>
+                        <li><strong>{excel_path.name}</strong> — All articles with scores, themes, and links</li>
                     </ul>
                 </div>
-                
-                <p style="color: #718096; font-size: 12px;">
-                    This report includes: Sentiment Analysis • Actionable Implications • Regional Breakdown • 
-                    Cross-Source Intelligence • Key Economic Numbers from 44 organizations.
+
+                <p style="color: #718096; font-size: 12px; text-align: center; margin-top: 20px;">
+                    Sentiment Analysis &bull; Actionable Implications &bull; Regional Breakdown &bull;
+                    Cross-Source Intelligence &bull; Key Economic Numbers
                 </p>
             </div>
-            
+
             <div class="footer">
                 <p><strong>THE GLOBAL PULSE</strong></p>
-                <p style="opacity: 0.7;">Automated Weekly Intelligence | Powered by Gemini AI</p>
+                <p style="opacity: 0.7;">Automated Weekly Intelligence | Powered by NVIDIA NIM 7-Model Architecture</p>
             </div>
         </body>
         </html>
         """
-        
+
         return self.send_report(
             subject=subject,
             body_html=body_html,

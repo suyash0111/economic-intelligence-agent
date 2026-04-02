@@ -5,7 +5,7 @@ Models:
   1. Mistral Small 3.1 (24B) - Quick article summaries
   2. DeepSeek V3.1 Terminus - Deep analysis & reasoning
   3. Llama 4 Maverick - Vision/chart analysis
-  4. Rerank QA Mistral - Article relevance ranking
+  4. Llama Nemotron Rerank - Article relevance ranking
   5. NV-Embed-V1 - Embeddings for dedup & clustering
   6. OCDRNet - OCR for scanned PDFs
   7. Kimi K2 Instruct - Long-context final synthesis
@@ -35,7 +35,7 @@ class NvidiaModels:
     SUMMARIZER = "mistralai/mistral-small-3.1-24b-instruct-2503"
     DEEP_ANALYZER = "deepseek-ai/deepseek-v3.1-terminus"
     VISION = "meta/llama-4-maverick-17b-128e-instruct"
-    RERANKER = "nvidia/nv-rerankqa-mistral-4b-v3"
+    RERANKER = "nvidia/llama-nemotron-rerank-1b-v2"
     EMBEDDER = "nvidia/nv-embed-v1"
     OCR = "nvidia/ocdrnet"
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"
@@ -377,7 +377,8 @@ class NvidiaAnalyzer:
                 data = {
                     "model": NvidiaModels.RERANKER,
                     "query": {"text": query},
-                    "passages": passages
+                    "passages": passages,
+                    "truncate": "END"
                 }
 
                 response = http_requests.post(

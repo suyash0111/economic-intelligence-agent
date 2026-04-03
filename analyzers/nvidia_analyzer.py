@@ -1013,16 +1013,20 @@ CRITICAL RULES:
 
         Returns a dict with chart-ready data structures.
         """
-        # Prepare article content for extraction
+        # Prepare article content for extraction — include ALL available text
         top_articles = sorted(articles, key=lambda x: x.importance_score, reverse=True)[:20]
         article_summaries = []
         for a in top_articles:
             content = a.ai_summary or a.summary or ''
             analysis = a.ai_analysis or ''
+            preview = a.content_preview or ''
+            raw_summary = a.summary or ''
             article_summaries.append(
                 f"[Source: {a.source_full}] Title: {a.title}\n"
-                f"Summary: {content[:300]}\n"
-                f"Analysis: {analysis[:500]}"
+                f"Summary: {content[:400]}\n"
+                f"Original Text: {raw_summary[:500]}\n"
+                f"Content Preview: {preview[:500]}\n"
+                f"Analysis: {analysis[:600]}"
             )
 
         combined_text = "\n---\n".join(article_summaries)
@@ -1059,7 +1063,7 @@ CRITICAL RULES:
 that are EXPLICITLY stated in the following articles. Do NOT invent or estimate numbers.
 
 ARTICLES:
-{combined_text[:6000]}
+{combined_text[:10000]}
 
 TASK: Extract up to 10 key numerical data points mentioned in these articles.
 Return ONLY a valid JSON array. Each item must have:
@@ -1096,7 +1100,7 @@ CRITICAL RULES:
 in the following articles. Do NOT add rates from your own knowledge.
 
 ARTICLES:
-{combined_text[:6000]}
+{combined_text[:10000]}
 
 TASK: Extract any central bank policy rates mentioned. Return ONLY a valid JSON array.
 Each item must have:
@@ -1127,7 +1131,7 @@ CRITICAL RULES:
 These will be displayed as large callout numbers in an executive dashboard.
 
 ARTICLES:
-{combined_text[:6000]}
+{combined_text[:10000]}
 
 TASK: Extract the most significant numbers/statistics. Return ONLY a valid JSON array.
 Each item must have:

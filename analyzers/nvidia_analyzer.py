@@ -1059,102 +1059,113 @@ CRITICAL RULES:
 
     def _extract_data_points(self, combined_text: str) -> list[dict]:
         """Extract specific numerical data points from article text."""
-        prompt = f"""You are a data extraction specialist. Extract ONLY the specific numerical data points 
-that are EXPLICITLY stated in the following articles. Do NOT invent or estimate numbers.
+        prompt = f"""You are a data extraction specialist for an economic intelligence report.
+Scan the following articles and extract every quantitative data point you can find.
+Look for: percentages, dollar amounts, growth rates, quantities, rankings, 
+year-over-year changes, forecasts, employment figures, trade volumes, etc.
 
 ARTICLES:
 {combined_text[:10000]}
 
-TASK: Extract up to 10 key numerical data points mentioned in these articles.
+TASK: Extract up to 12 key numerical data points from these articles.
 Return ONLY a valid JSON array. Each item must have:
-- "metric": short name of the indicator (e.g., "US GDP Growth", "Eurozone Inflation")
-- "value": the numerical value as a float (e.g., 3.2, -1.5, 4.0)
-- "unit": the unit (e.g., "%", "billion USD", "million jobs", "basis points")
-- "source": which organization/report this data came from
+- "metric": short descriptive name (e.g., "US GDP Growth", "Trade Deficit")
+- "value": the numerical value as a float (e.g., 3.2, -1.5, 4.0, 250.0)
+- "unit": the unit ("%", "billion USD", "million", "basis points", "index")
+- "source": which organization published this (e.g., "IMF", "World Bank")
 
-EXAMPLE OUTPUT:
-[
-  {{"metric": "US GDP Growth Q3", "value": 2.3, "unit": "%", "source": "IMF World Economic Outlook"}},
-  {{"metric": "ECB Policy Rate", "value": 4.0, "unit": "%", "source": "ECB Press Release"}}
-]
+EXAMPLES of data points to look for:
+- "GDP grew 2.3%" → {{"metric": "GDP Growth", "value": 2.3, "unit": "%", "source": "..." }}
+- "$500 billion in trade" → {{"metric": "Trade Volume", "value": 500, "unit": "billion USD", "source": "..."}}
+- "unemployment at 4.1%" → {{"metric": "Unemployment Rate", "value": 4.1, "unit": "%", "source": "..."}}
+- "140 million workers" → {{"metric": "Workforce Size", "value": 140, "unit": "million", "source": "..."}}
 
-CRITICAL RULES:
-- Extract ONLY numbers that appear explicitly in the text
-- Do NOT guess, estimate, or infer numbers that aren't stated
-- If fewer than 2 data points exist, return an empty array []
-- Return ONLY the JSON array, no markdown formatting, no explanation"""
+RULES:
+- Extract numbers that appear in the text — do not invent data
+- Even a single valid data point should be returned
+- Return ONLY the JSON array, no other text"""
 
         raw = self._safe_chat(
             model=NvidiaModels.DEEP_ANALYZER,
             prompt=prompt,
             fallback="[]",
             max_tokens=1024,
-            temperature=0.1
+            temperature=0.15
         )
 
+        logger.info(f"[DATA] Data points raw response: {raw[:300]}")
         return self._parse_json_safely(raw, [])
 
     def _extract_rate_data(self, combined_text: str) -> list[dict]:
         """Extract central bank interest rate data from articles."""
-        prompt = f"""Extract ONLY central bank interest rate information that is EXPLICITLY mentioned 
-in the following articles. Do NOT add rates from your own knowledge.
+        prompt = f"""Extract central bank interest rate information from these articles.
+Look for any mention of policy rates, interest rates, rate decisions, or rate targets.
 
 ARTICLES:
 {combined_text[:10000]}
 
-TASK: Extract any central bank policy rates mentioned. Return ONLY a valid JSON array.
+TASK: Extract central bank policy rates. Return ONLY a valid JSON array.
 Each item must have:
-- "bank": name of the central bank (e.g., "Federal Reserve", "ECB", "Bank of England")
-- "rate": the interest rate as a float (e.g., 5.25, 4.0)
-- "action": what happened (e.g., "held", "raised 25bp", "cut 50bp", "unchanged")
-- "source": which article/report this came from
+- "bank": name of the central bank (e.g., "Federal Reserve", "ECB")
+- "rate": the interest rate as a float (e.g., 5.25)
+- "action": what happened ("held", "raised 25bp", "cut 50bp", "unchanged")
+- "source": which article/report mentioned this
 
-CRITICAL RULES:
-- Extract ONLY rates explicitly stated in the article text
-- Do NOT add rates from your own knowledge
-- If no central bank rates are mentioned, return an empty array []
-- Return ONLY the JSON array, no markdown, no explanation"""
+RULES:
+- Extract rates from the article text
+- Even a single rate is worth returning
+- If no rates are found at all, return an empty array []
+- Return ONLY the JSON array, no other text"""
 
         raw = self._safe_chat(
             model=NvidiaModels.DEEP_ANALYZER,
             prompt=prompt,
             fallback="[]",
             max_tokens=512,
-            temperature=0.1
+            temperature=0.15
         )
 
+        logger.info(f"[DATA] Rate data raw response: {raw[:300]}")
         return self._parse_json_safely(raw, [])
 
     def _extract_key_findings(self, combined_text: str) -> list[dict]:
         """Extract headline numbers for the key findings dashboard."""
-        prompt = f"""Extract the 4-6 most impactful headline statistics from these articles.
-These will be displayed as large callout numbers in an executive dashboard.
+        prompt = f"""You are creating an executive dashboard. Extract the most impactful 
+statistics and numbers from these articles to display as large callout numbers.
 
 ARTICLES:
 {combined_text[:10000]}
 
-TASK: Extract the most significant numbers/statistics. Return ONLY a valid JSON array.
+TASK: Find 3-6 headline-worthy numbers. Return ONLY a valid JSON array.
 Each item must have:
-- "number": the statistic formatted for display (e.g., "3.2%", "$1.4T", "78M", "4.0%")
-- "label": what the number represents (max 25 chars, e.g., "Global GDP Growth")
-- "detail": brief context (max 40 chars, e.g., "Q3 2026, IMF estimate")
-- "source": which report/org this came from
+- "number": formatted for visual impact (e.g., "3.2%", "$1.4T", "78M", "+25bp")
+- "label": what it represents (max 25 chars)
+- "detail": brief context (max 40 chars)
+- "source": which org published this
 
-CRITICAL RULES:
-- Only use statistics EXPLICITLY found in the articles
-- Choose the most impactful, headline-worthy numbers
-- Format the "number" field for visual impact (use %, $, M, B, T etc.)
-- If fewer than 2 significant statistics exist, return an empty array []
-- Return ONLY the JSON array, no markdown, no explanation"""
+Look for:
+- Growth rates, GDP figures, inflation numbers
+- Dollar amounts (trade, investment, budgets)
+- Employment/workforce numbers
+- Policy rate levels or changes
+- Forecast revisions
+- Any significant quantitative finding
+
+RULES:
+- Use numbers found in the articles
+- Format for maximum visual impact
+- Even 1-2 findings are worth returning
+- Return ONLY the JSON array, no other text"""
 
         raw = self._safe_chat(
             model=NvidiaModels.SYNTHESIZER,
             prompt=prompt,
             fallback="[]",
             max_tokens=512,
-            temperature=0.1
+            temperature=0.15
         )
 
+        logger.info(f"[DATA] Key findings raw response: {raw[:300]}")
         return self._parse_json_safely(raw, [])
 
     def _estimate_sentiment_from_articles(self, articles: list[Article]) -> dict:

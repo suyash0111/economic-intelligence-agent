@@ -41,6 +41,7 @@ class NvidiaModels:
     SYNTHESIZER = "moonshotai/kimi-k2-instruct-0905"
 
     BASE_URL = "https://integrate.api.nvidia.com/v1"
+    RERANKER_URL = "https://ai.api.nvidia.com/v1/retrieval/nvidia/llama-nemotron-rerank-1b-v2/reranking"
 
 
 class NvidiaAnalyzer:
@@ -372,6 +373,7 @@ class NvidiaAnalyzer:
 
                 headers = {
                     "Authorization": f"Bearer {Settings.NVIDIA_API_KEY}",
+                    "Accept": "application/json",
                     "Content-Type": "application/json",
                 }
                 data = {
@@ -382,7 +384,7 @@ class NvidiaAnalyzer:
                 }
 
                 response = http_requests.post(
-                    f"{NvidiaModels.BASE_URL}/reranking",
+                    NvidiaModels.RERANKER_URL,
                     headers=headers,
                     json=data,
                     timeout=30

@@ -76,6 +76,7 @@ class DocumentGenerator:
 
     def __init__(self):
         self.doc = None
+        self.figure_counter = 0
 
     # =====================================================================
     # PUBLIC API
@@ -96,11 +97,14 @@ class DocumentGenerator:
         key_numbers: str = "",
         policy_watch: str = "",
         risk_radar: str = "",
-        week_ahead: str = ""
+        week_ahead: str = "",
+        chart_paths: dict = None
     ) -> Path:
         """Generate a comprehensive Word document report."""
         self.doc = Document()
+        self.figure_counter = 0
         self._setup_document()
+        charts = chart_paths or {}
 
         # Flatten all articles for appendix
         all_articles = []
@@ -114,6 +118,7 @@ class DocumentGenerator:
         self._add_table_of_contents()
 
         # === SECTION 1: EXECUTIVE BRIEF ===
+        self._add_section_divider("1", "Executive Brief")
         self._add_section_header("EXECUTIVE BRIEF", "1")
         self._add_executive_brief(
             executive_summary=executive_summary,
@@ -121,49 +126,87 @@ class DocumentGenerator:
             sentiment_analysis=sentiment_analysis,
             key_numbers=key_numbers
         )
+        # Embed key findings dashboard chart
+        if 'key_findings' in charts:
+            self._add_figure(charts['key_findings'],
+                            "Key economic indicators from this week's reports",
+                            "Data extracted from analyzed publications")
+        # Embed sentiment gauge
+        if 'sentiment' in charts:
+            self._add_figure(charts['sentiment'],
+                            "Overall market sentiment based on analyzed reports",
+                            "Sentiment derived from report language analysis")
         self.doc.add_page_break()
 
         # === SECTION 2: MACRO PULSE ===
+        self._add_section_divider("2", "Macro Pulse")
         self._add_section_header("MACRO PULSE: GLOBAL ECONOMIC DASHBOARD", "2")
         self._add_macro_pulse(key_numbers)
+        # Embed key data points chart
+        if 'key_data' in charts:
+            self._add_figure(charts['key_data'],
+                            "Key data points extracted from analyzed reports",
+                            "All values sourced from published reports and papers")
         self.doc.add_page_break()
 
         # === SECTION 3: POLICY & CENTRAL BANK WATCH ===
+        self._add_section_divider("3", "Policy & Central Bank Watch")
         self._add_section_header("POLICY & CENTRAL BANK WATCH", "3")
         self._add_policy_watch(policy_watch, all_articles)
+        # Embed rate comparison chart
+        if 'rate_comparison' in charts:
+            self._add_figure(charts['rate_comparison'],
+                            "Central bank policy rates as reported this week",
+                            "Rates extracted from central bank publications")
         self.doc.add_page_break()
 
         # === SECTION 4: THEMATIC DEEP DIVES ===
+        self._add_section_divider("4", "Thematic Deep Dives")
         self._add_section_header("THEMATIC DEEP DIVES", "4")
         self._add_thematic_deep_dives(all_articles, theme_summary)
+        # Embed topic distribution chart
+        if 'topic_distribution' in charts:
+            self._add_figure(charts['topic_distribution'],
+                            "Distribution of themes across analyzed reports",
+                            "Based on thematic analysis of published content")
         self.doc.add_page_break()
 
         # === SECTION 5: CROSS-SOURCE INTELLIGENCE ===
         if cross_source_synthesis:
+            self._add_section_divider("5", "Cross-Source Intelligence")
             self._add_section_header("CROSS-SOURCE INTELLIGENCE", "5")
             self._add_intro_text("Analysis of consensus and divergent views across organizations.")
             self._add_formatted_text(cross_source_synthesis)
+            # Embed comparison table chart
+            if 'comparison_table' in charts:
+                self._add_figure(charts['comparison_table'],
+                                "Cross-source data comparison",
+                                "Data points compared across multiple reports")
             self.doc.add_page_break()
 
         # === SECTION 6: REGIONAL OUTLOOK ===
         if geographic_summary:
+            self._add_section_divider("6", "Regional Outlook")
             self._add_section_header("REGIONAL OUTLOOK", "6")
             self._add_regional_outlook(geographic_summary)
             self.doc.add_page_break()
 
         # === SECTION 7: RISK RADAR ===
+        self._add_section_divider("7", "Risk Radar")
         self._add_section_header("RISK RADAR", "7")
         self._add_risk_radar(risk_radar, all_articles)
         self.doc.add_page_break()
 
         # === SECTION 8: STRATEGIC IMPLICATIONS & RECOMMENDATIONS ===
         if actionable_implications:
+            self._add_section_divider("8", "Strategic Implications")
             self._add_section_header("STRATEGIC IMPLICATIONS & RECOMMENDATIONS", "8")
             self._add_intro_text("Practical considerations for key stakeholders.")
             self._add_formatted_text(actionable_implications)
             self.doc.add_page_break()
 
         # === SECTION 9: THE WEEK AHEAD ===
+        self._add_section_divider("9", "The Week Ahead")
         self._add_section_header("THE WEEK AHEAD", "9")
         self._add_week_ahead(week_ahead)
         self.doc.add_page_break()
@@ -183,6 +226,99 @@ class DocumentGenerator:
         self.doc.save(output_path)
         logger.info(f"Document saved: {output_path}")
         return output_path
+
+    # =====================================================================
+    # CHART & FIGURE EMBEDDING (WEF Style)
+    # =====================================================================
+
+    def _add_figure(self, image_path, title: str, source: str = ""):
+        """Embed a chart image with WEF-style figure numbering and caption."""
+        self.figure_counter += 1
+        fig_label = f"FIGURE {self.figure_counter}"
+
+        try:
+            image_path = Path(image_path)
+            if not image_path.exists():
+                logger.warning(f"Chart file not found: {image_path}")
+                return
+
+            # Figure label
+            label_para = self.doc.add_paragraph()
+            label_para.paragraph_format.space_before = Pt(16)
+            label_para.paragraph_format.space_after = Pt(4)
+            run = label_para.add_run(fig_label)
+            run.font.size = Pt(8)
+            run.font.color.rgb = GREY_TEXT
+            run.font.name = FONT_FAMILY
+            run.bold = True
+
+            # Figure title
+            title_para = self.doc.add_paragraph()
+            title_para.paragraph_format.space_before = Pt(0)
+            title_para.paragraph_format.space_after = Pt(6)
+            run = title_para.add_run(title)
+            run.font.size = Pt(10.5)
+            run.font.color.rgb = NAVY
+            run.font.name = FONT_FAMILY
+            run.bold = True
+
+            # Image
+            self.doc.add_picture(str(image_path), width=Inches(6.2))
+            last_para = self.doc.paragraphs[-1]
+            last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # Source attribution
+            if source:
+                source_para = self.doc.add_paragraph()
+                source_para.paragraph_format.space_before = Pt(4)
+                source_para.paragraph_format.space_after = Pt(12)
+                source_run = source_para.add_run(f"Source: {source}")
+                source_run.font.size = CAPTION_SIZE
+                source_run.font.color.rgb = GREY_TEXT
+                source_run.font.name = FONT_FAMILY
+                source_run.italic = True
+
+        except Exception as e:
+            logger.warning(f"Failed to embed chart {image_path}: {e}")
+
+    def _add_section_divider(self, section_num: str, section_title: str):
+        """Add a full-page colored section divider (WEF style)."""
+        # Add a page break first
+        self.doc.add_page_break()
+
+        # Add spacer paragraphs to push content to middle of page
+        for _ in range(8):
+            spacer = self.doc.add_paragraph()
+            spacer.paragraph_format.space_after = Pt(0)
+            spacer.paragraph_format.space_before = Pt(0)
+
+        # Section number
+        num_para = self.doc.add_paragraph()
+        num_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        num_para.paragraph_format.space_after = Pt(8)
+        run = num_para.add_run(f"Section {section_num}")
+        run.font.size = Pt(14)
+        run.font.color.rgb = ACCENT_BLUE
+        run.font.name = FONT_FAMILY
+
+        # Section title
+        title_para = self.doc.add_paragraph()
+        title_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        title_para.paragraph_format.space_before = Pt(0)
+        run = title_para.add_run(section_title)
+        run.font.size = Pt(32)
+        run.font.color.rgb = NAVY
+        run.font.name = FONT_FAMILY
+        run.bold = True
+
+        # Decorative line
+        line_para = self.doc.add_paragraph()
+        line_para.paragraph_format.space_before = Pt(12)
+        run = line_para.add_run("─" * 50)
+        run.font.size = Pt(10)
+        run.font.color.rgb = ACCENT_BLUE
+
+        self.doc.add_page_break()
 
     # =====================================================================
     # DOCUMENT SETUP

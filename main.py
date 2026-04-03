@@ -33,6 +33,7 @@ from collectors.collector_manager import CollectorManager
 from analyzers.nvidia_analyzer import NvidiaAnalyzer
 from generators.document_generator import DocumentGenerator
 from generators.excel_generator import ExcelGenerator
+from generators.chart_generator import ChartGenerator
 from delivery.email_sender import EmailSender
 
 # Set up logging with UTF-8 encoding for Windows compatibility
@@ -121,6 +122,7 @@ def run_agent(
         policy_watch = ""
         risk_radar = ""
         week_ahead = ""
+        chart_paths = {}
         analyzed_articles = all_articles
 
         # Check for NVIDIA API key
@@ -263,6 +265,24 @@ def run_agent(
                 if analyzer.quota_exhausted:
                     logger.warning("[NVIDIA] Some analysis may be partial due to credit limits")
 
+                # ============================================================
+                # STEP 2g: DATA EXTRACTION & CHART GENERATION
+                # ============================================================
+                logger.info("[CHART] 📊 Extracting chartable data from articles...")
+                try:
+                    extracted_data = analyzer.extract_chartable_data(analyzed_articles)
+                    logger.info(f"[OK] Extracted data: "
+                               f"{len(extracted_data.get('data_points', []))} data points, "
+                               f"{len(extracted_data.get('rate_data', []))} rates, "
+                               f"{len(extracted_data.get('key_findings', []))} key findings")
+
+                    chart_gen = ChartGenerator()
+                    chart_paths = chart_gen.generate_all_charts(extracted_data)
+                    logger.info(f"[OK] Generated {len(chart_paths)} charts: {list(chart_paths.keys())}")
+                except Exception as e:
+                    logger.warning(f"[CHART] Chart generation failed (non-fatal): {e}")
+                    chart_paths = {}
+
             except Exception as e:
                 logger.error(f"[NVIDIA] Error during analysis: {e}")
                 import traceback
@@ -294,7 +314,8 @@ def run_agent(
             key_numbers=key_numbers,
             policy_watch=policy_watch,
             risk_radar=risk_radar,
-            week_ahead=week_ahead
+            week_ahead=week_ahead,
+            chart_paths=chart_paths
         )
         logger.info(f"[OK] Word document: {doc_path}")
 

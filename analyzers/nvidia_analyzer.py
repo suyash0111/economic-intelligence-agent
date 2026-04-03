@@ -1000,6 +1000,214 @@ CRITICAL RULES:
         )
 
     # =====================================================================
+    # STRUCTURED DATA EXTRACTION FOR CHARTS
+    # All data comes EXCLUSIVELY from the analyzed articles.
+    # =====================================================================
+
+    def extract_chartable_data(self, articles: list[Article]) -> dict:
+        """
+        Extract structured, chartable data from the analyzed articles.
+        
+        STRICT RULE: All extracted data must originate from the article
+        content. No data is fabricated or pulled from external sources.
+
+        Returns a dict with chart-ready data structures.
+        """
+        # Prepare article content for extraction
+        top_articles = sorted(articles, key=lambda x: x.importance_score, reverse=True)[:20]
+        article_summaries = []
+        for a in top_articles:
+            content = a.ai_summary or a.summary or ''
+            analysis = a.ai_analysis or ''
+            article_summaries.append(
+                f"[Source: {a.source_full}] Title: {a.title}\n"
+                f"Summary: {content[:300]}\n"
+                f"Analysis: {analysis[:500]}"
+            )
+
+        combined_text = "\n---\n".join(article_summaries)
+
+        # EXTRACTION 1: Key data points (numbers, percentages, monetary values)
+        data_points = self._extract_data_points(combined_text)
+
+        # EXTRACTION 2: Central bank rates (if available in articles)
+        rate_data = self._extract_rate_data(combined_text)
+
+        # EXTRACTION 3: Key findings for big-number dashboard
+        key_findings = self._extract_key_findings(combined_text)
+
+        # NON-AI: Topic distribution from article themes
+        topic_counts = {}
+        for a in articles:
+            for theme in (a.themes or []):
+                topic_counts[theme] = topic_counts.get(theme, 0) + 1
+
+        # NON-AI: Sentiment estimation from AI analysis
+        sentiment = self._estimate_sentiment_from_articles(articles)
+
+        return {
+            'data_points': data_points,
+            'rate_data': rate_data,
+            'key_findings': key_findings,
+            'topic_counts': topic_counts,
+            'sentiment': sentiment,
+        }
+
+    def _extract_data_points(self, combined_text: str) -> list[dict]:
+        """Extract specific numerical data points from article text."""
+        prompt = f"""You are a data extraction specialist. Extract ONLY the specific numerical data points 
+that are EXPLICITLY stated in the following articles. Do NOT invent or estimate numbers.
+
+ARTICLES:
+{combined_text[:6000]}
+
+TASK: Extract up to 10 key numerical data points mentioned in these articles.
+Return ONLY a valid JSON array. Each item must have:
+- "metric": short name of the indicator (e.g., "US GDP Growth", "Eurozone Inflation")
+- "value": the numerical value as a float (e.g., 3.2, -1.5, 4.0)
+- "unit": the unit (e.g., "%", "billion USD", "million jobs", "basis points")
+- "source": which organization/report this data came from
+
+EXAMPLE OUTPUT:
+[
+  {{"metric": "US GDP Growth Q3", "value": 2.3, "unit": "%", "source": "IMF World Economic Outlook"}},
+  {{"metric": "ECB Policy Rate", "value": 4.0, "unit": "%", "source": "ECB Press Release"}}
+]
+
+CRITICAL RULES:
+- Extract ONLY numbers that appear explicitly in the text
+- Do NOT guess, estimate, or infer numbers that aren't stated
+- If fewer than 2 data points exist, return an empty array []
+- Return ONLY the JSON array, no markdown formatting, no explanation"""
+
+        raw = self._safe_chat(
+            model=NvidiaModels.DEEP_ANALYZER,
+            prompt=prompt,
+            fallback="[]",
+            max_tokens=1024,
+            temperature=0.1
+        )
+
+        return self._parse_json_safely(raw, [])
+
+    def _extract_rate_data(self, combined_text: str) -> list[dict]:
+        """Extract central bank interest rate data from articles."""
+        prompt = f"""Extract ONLY central bank interest rate information that is EXPLICITLY mentioned 
+in the following articles. Do NOT add rates from your own knowledge.
+
+ARTICLES:
+{combined_text[:6000]}
+
+TASK: Extract any central bank policy rates mentioned. Return ONLY a valid JSON array.
+Each item must have:
+- "bank": name of the central bank (e.g., "Federal Reserve", "ECB", "Bank of England")
+- "rate": the interest rate as a float (e.g., 5.25, 4.0)
+- "action": what happened (e.g., "held", "raised 25bp", "cut 50bp", "unchanged")
+- "source": which article/report this came from
+
+CRITICAL RULES:
+- Extract ONLY rates explicitly stated in the article text
+- Do NOT add rates from your own knowledge
+- If no central bank rates are mentioned, return an empty array []
+- Return ONLY the JSON array, no markdown, no explanation"""
+
+        raw = self._safe_chat(
+            model=NvidiaModels.DEEP_ANALYZER,
+            prompt=prompt,
+            fallback="[]",
+            max_tokens=512,
+            temperature=0.1
+        )
+
+        return self._parse_json_safely(raw, [])
+
+    def _extract_key_findings(self, combined_text: str) -> list[dict]:
+        """Extract headline numbers for the key findings dashboard."""
+        prompt = f"""Extract the 4-6 most impactful headline statistics from these articles.
+These will be displayed as large callout numbers in an executive dashboard.
+
+ARTICLES:
+{combined_text[:6000]}
+
+TASK: Extract the most significant numbers/statistics. Return ONLY a valid JSON array.
+Each item must have:
+- "number": the statistic formatted for display (e.g., "3.2%", "$1.4T", "78M", "4.0%")
+- "label": what the number represents (max 25 chars, e.g., "Global GDP Growth")
+- "detail": brief context (max 40 chars, e.g., "Q3 2026, IMF estimate")
+- "source": which report/org this came from
+
+CRITICAL RULES:
+- Only use statistics EXPLICITLY found in the articles
+- Choose the most impactful, headline-worthy numbers
+- Format the "number" field for visual impact (use %, $, M, B, T etc.)
+- If fewer than 2 significant statistics exist, return an empty array []
+- Return ONLY the JSON array, no markdown, no explanation"""
+
+        raw = self._safe_chat(
+            model=NvidiaModels.SYNTHESIZER,
+            prompt=prompt,
+            fallback="[]",
+            max_tokens=512,
+            temperature=0.1
+        )
+
+        return self._parse_json_safely(raw, [])
+
+    def _estimate_sentiment_from_articles(self, articles: list[Article]) -> dict:
+        """Estimate overall market sentiment from article analysis text."""
+        # Count sentiment keywords from AI analysis
+        positive_words = ['growth', 'recovery', 'optimistic', 'surge', 'expansion', 
+                         'bullish', 'improve', 'strong', 'gain', 'boom', 'resilient']
+        negative_words = ['decline', 'recession', 'pessimistic', 'crisis', 'contraction',
+                         'bearish', 'deteriorate', 'weak', 'loss', 'slowdown', 'risk', 'concern']
+
+        pos_count = 0
+        neg_count = 0
+        for a in articles:
+            text = (a.ai_summary or '') + ' ' + (a.ai_analysis or '')
+            text_lower = text.lower()
+            pos_count += sum(1 for w in positive_words if w in text_lower)
+            neg_count += sum(1 for w in negative_words if w in text_lower)
+
+        total = pos_count + neg_count
+        if total == 0:
+            return {'score': 0.0, 'label': 'Neutral', 'source_count': len(articles)}
+
+        score = (pos_count - neg_count) / total  # -1.0 to 1.0
+
+        if score > 0.4:
+            label = 'Bullish'
+        elif score > 0.15:
+            label = 'Cautiously Optimistic'
+        elif score > -0.15:
+            label = 'Neutral'
+        elif score > -0.4:
+            label = 'Cautious'
+        else:
+            label = 'Bearish'
+
+        return {'score': score, 'label': label, 'source_count': len(articles)}
+
+    def _parse_json_safely(self, raw: str, fallback):
+        """Parse JSON from LLM output, handling markdown code fences."""
+        import json as json_lib
+        if not raw or not raw.strip():
+            return fallback
+        try:
+            # Strip markdown code fences
+            cleaned = raw.strip()
+            if cleaned.startswith('```'):
+                cleaned = cleaned.split('\n', 1)[1] if '\n' in cleaned else cleaned[3:]
+                if cleaned.endswith('```'):
+                    cleaned = cleaned[:-3]
+                cleaned = cleaned.strip()
+            return json_lib.loads(cleaned)
+        except Exception as e:
+            logger.warning(f"[DATA] Failed to parse JSON from LLM: {e}")
+            logger.debug(f"[DATA] Raw response: {raw[:200]}")
+            return fallback
+
+    # =====================================================================
     # ECONOMIC INDICATORS (FRED API - no AI needed)
     # =====================================================================
 

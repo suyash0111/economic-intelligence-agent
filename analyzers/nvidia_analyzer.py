@@ -1040,6 +1040,24 @@ CRITICAL RULES:
         # EXTRACTION 3: Key findings for big-number dashboard
         key_findings = self._extract_key_findings(combined_text)
 
+        # FALLBACK: Regex-based extraction if AI returned empty
+        if not data_points and not key_findings:
+            logger.info("[DATA] AI extraction returned empty, using regex fallback...")
+            regex_points = self._regex_extract_numbers(combined_text, articles)
+            if regex_points:
+                data_points = regex_points[:10]
+                # Also build key findings from regex data
+                key_findings = [
+                    {
+                        'number': f"{dp['value']}{dp.get('unit', '')}",
+                        'label': dp['metric'][:25],
+                        'detail': dp.get('source', '')[:40],
+                        'source': dp.get('source', '')
+                    }
+                    for dp in regex_points[:6]
+                ]
+                logger.info(f"[DATA] Regex fallback found {len(data_points)} data points")
+
         # NON-AI: Topic distribution from article themes
         topic_counts = {}
         for a in articles:
@@ -1167,6 +1185,78 @@ RULES:
 
         logger.info(f"[DATA] Key findings raw response: {raw[:300]}")
         return self._parse_json_safely(raw, [])
+
+    def _regex_extract_numbers(self, combined_text: str, articles: list) -> list[dict]:
+        """Regex-based fallback to extract numbers from article text."""
+        import re
+
+        data_points = []
+        seen_metrics = set()
+
+        # Scan each article for numbers
+        for a in articles:
+            text = ' '.join(filter(None, [
+                a.title, a.ai_summary or '', a.summary or '',
+                a.content_preview or '', a.ai_analysis or ''
+            ]))
+
+            source = a.source_full or a.source or 'Report'
+
+            # Pattern: X% (percentages)
+            for match in re.finditer(r'(\d+\.?\d*)\s*(%|percent|percentage)', text, re.IGNORECASE):
+                val = float(match.group(1))
+                # Get context (30 chars before the number)
+                start = max(0, match.start() - 40)
+                context = text[start:match.start()].strip()
+                # Clean up context to make a metric name
+                metric = context.split('.')[-1].strip()[-35:] if context else f"Indicator ({source})"
+                if metric and len(metric) > 3 and metric not in seen_metrics:
+                    data_points.append({
+                        'metric': metric[:40],
+                        'value': val,
+                        'unit': '%',
+                        'source': source
+                    })
+                    seen_metrics.add(metric)
+
+            # Pattern: $X billion/million/trillion
+            for match in re.finditer(r'\$\s*(\d+\.?\d*)\s*(trillion|billion|million|bn|mn|tn)', text, re.IGNORECASE):
+                val = float(match.group(1))
+                unit_raw = match.group(2).lower()
+                unit_map = {'trillion': 'trillion USD', 'tn': 'trillion USD',
+                           'billion': 'billion USD', 'bn': 'billion USD',
+                           'million': 'million USD', 'mn': 'million USD'}
+                unit = unit_map.get(unit_raw, 'USD')
+                start = max(0, match.start() - 40)
+                context = text[start:match.start()].strip()
+                metric = context.split('.')[-1].strip()[-35:] if context else f"Amount ({source})"
+                if metric and metric not in seen_metrics:
+                    data_points.append({
+                        'metric': metric[:40],
+                        'value': val,
+                        'unit': unit,
+                        'source': source
+                    })
+                    seen_metrics.add(metric)
+
+            # Pattern: X million/billion (without $)
+            for match in re.finditer(r'(\d+\.?\d*)\s*(million|billion|trillion)\s+(people|workers|jobs|users|households)', text, re.IGNORECASE):
+                val = float(match.group(1))
+                unit = f"{match.group(2)} {match.group(3)}"
+                start = max(0, match.start() - 30)
+                context = text[start:match.start()].strip()
+                metric = context.split('.')[-1].strip()[-35:] if context else f"Count ({source})"
+                if metric and metric not in seen_metrics:
+                    data_points.append({
+                        'metric': metric[:40],
+                        'value': val,
+                        'unit': unit,
+                        'source': source
+                    })
+                    seen_metrics.add(metric)
+
+        logger.info(f"[DATA] Regex extraction found {len(data_points)} data points")
+        return data_points
 
     def _estimate_sentiment_from_articles(self, articles: list[Article]) -> dict:
         """Estimate overall market sentiment from article analysis text."""

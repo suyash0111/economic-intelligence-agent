@@ -870,6 +870,136 @@ CRITICAL RULES:
         return regions
 
     # =====================================================================
+    # NEW SYNTHESIS SECTIONS (10-Section Architecture)
+    # =====================================================================
+
+    def generate_policy_watch(self, articles: list[Article]) -> str:
+        """Generate Policy & Central Bank Watch section."""
+        cb_articles = [a for a in articles if a.category == 'Central Bank']
+        policy_articles = [a for a in articles
+                          if any(kw in (a.title + ' ' + (a.summary or '')).lower()
+                                 for kw in ['interest rate', 'monetary policy', 'fiscal',
+                                           'inflation target', 'rate decision', 'quantitative',
+                                           'central bank', 'fed ', 'ecb ', 'boe ', 'rbi '])]
+
+        relevant = list({a.title: a for a in (cb_articles + policy_articles)}.values())
+        if not relevant:
+            return ""
+
+        summaries = [f"[{a.source}] {a.title}: {a.ai_summary or a.summary[:100]}" for a in relevant[:12]]
+
+        prompt = f"""You are an economic intelligence analyst writing the "Policy & Central Bank Watch" section.
+
+CENTRAL BANK AND POLICY ARTICLES THIS WEEK:
+{chr(10).join(summaries)}
+
+Write a structured policy watch (250-350 words) with:
+
+**POLICY ACTIONS**
+- Any rate decisions, QE/QT announcements, or fiscal stimulus packages announced this week
+
+**KEY SPEECHES & SIGNALS**
+- Important speeches from central bankers with forward guidance interpretation
+
+**POLICY DIVERGENCE**
+- Brief comparison: which central banks are tightening, easing, or holding
+
+CRITICAL RULES:
+- Be specific about which central bank/authority took which action
+- Include actual numbers where available (rates, basis points)
+- If no major policy actions occurred, note the current stance
+- Do NOT make up data — only report what's in the articles"""
+
+        return self._safe_chat(
+            model=NvidiaModels.DEEP_ANALYZER,
+            prompt=prompt,
+            fallback="",
+            max_tokens=768,
+            temperature=0.3
+        )
+
+    def generate_risk_radar(self, articles: list[Article]) -> str:
+        """Generate Risk Radar section from high-importance articles."""
+        high_impact = sorted(articles, key=lambda x: x.importance_score, reverse=True)[:12]
+        summaries = [f"[{a.source}] (Score: {a.importance_score}/10) {a.title}: {a.ai_summary or a.summary[:100]}"
+                     for a in high_impact]
+
+        prompt = f"""You are an economic risk analyst writing the "Risk Radar" section for a weekly intelligence briefing.
+
+HIGH-IMPACT DEVELOPMENTS THIS WEEK:
+{chr(10).join(summaries)}
+
+Write a structured risk assessment (250-350 words) with:
+
+**TOP RISKS**
+Identify 3-5 key risks emerging from this week's developments. For each:
+- Risk name (concise)
+- Probability: Low / Medium / High
+- Impact: Low / Medium / High
+- Brief explanation (1-2 sentences)
+
+**WATCH LIST**
+3-4 developments that aren't yet risks but could escalate:
+- What to monitor and why
+
+**RISK TRAJECTORY**
+One paragraph on whether the overall risk environment is improving, stable, or deteriorating vs. prior weeks.
+
+CRITICAL RULES:
+- Base risks ONLY on the articles provided
+- Be specific, not generic
+- Use evidence from the articles to support risk assessments
+- If data is limited, say "Based on available intelligence..."
+- Do NOT fabricate scenarios"""
+
+        return self._safe_chat(
+            model=NvidiaModels.DEEP_ANALYZER,
+            prompt=prompt,
+            fallback="",
+            max_tokens=768,
+            temperature=0.3
+        )
+
+    def generate_week_ahead(self, articles: list[Article]) -> str:
+        """Generate The Week Ahead section based on current developments."""
+        top_articles = sorted(articles, key=lambda x: x.importance_score, reverse=True)[:10]
+        summaries = [f"[{a.source}] {a.title}" for a in top_articles]
+
+        prompt = f"""Based on this week's major economic developments, write a "Week Ahead" outlook.
+
+MAJOR DEVELOPMENTS THIS WEEK:
+{chr(10).join(summaries)}
+
+Write a forward-looking briefing (150-200 words) with:
+
+**KEY EVENTS TO WATCH**
+- 3-4 upcoming events, data releases, or decisions likely in the coming week
+  (e.g., scheduled central bank meetings, GDP releases, employment reports, earnings)
+
+**WHAT COULD CHANGE THE PICTURE**
+- 2-3 developments from this week that may evolve or escalate
+
+**THREE THINGS TO MONITOR**
+1. [First thing to watch]
+2. [Second thing to watch]
+3. [Third thing to watch]
+
+CRITICAL RULES:
+- Keep it forward-looking, not backward-looking
+- Be specific about WHAT to watch and WHY
+- Reference credible scheduled events where possible
+- If uncertain about upcoming events, note general areas to watch
+- Do NOT fabricate specific dates or events you're unsure about"""
+
+        return self._safe_chat(
+            model=NvidiaModels.SYNTHESIZER,
+            prompt=prompt,
+            fallback="",
+            max_tokens=512,
+            temperature=0.3
+        )
+
+    # =====================================================================
     # ECONOMIC INDICATORS (FRED API - no AI needed)
     # =====================================================================
 

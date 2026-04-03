@@ -118,6 +118,9 @@ def run_agent(
         geographic = {}
         key_numbers = ""
         executive_summary = ""
+        policy_watch = ""
+        risk_radar = ""
+        week_ahead = ""
         analyzed_articles = all_articles
 
         # Check for NVIDIA API key
@@ -240,6 +243,16 @@ def run_agent(
                 geographic = analyzer.generate_geographic_summary(analyzed_articles)
                 logger.info("[OK] Generated geographic breakdown")
 
+                # New sections for 10-section architecture
+                policy_watch = analyzer.generate_policy_watch(analyzed_articles)
+                logger.info("[OK] Generated policy & central bank watch")
+
+                risk_radar = analyzer.generate_risk_radar(analyzed_articles)
+                logger.info("[OK] Generated risk radar")
+
+                week_ahead = analyzer.generate_week_ahead(analyzed_articles)
+                logger.info("[OK] Generated week ahead")
+
                 # Final status
                 logger.info(f"[NVIDIA] ═══ FINAL STATUS ═══")
                 logger.info(f"[NVIDIA] Total API calls: {analyzer.total_api_calls}")
@@ -278,7 +291,10 @@ def run_agent(
             sentiment_analysis=sentiment,
             actionable_implications=implications,
             geographic_summary=geographic,
-            key_numbers=key_numbers
+            key_numbers=key_numbers,
+            policy_watch=policy_watch,
+            risk_radar=risk_radar,
+            week_ahead=week_ahead
         )
         logger.info(f"[OK] Word document: {doc_path}")
 

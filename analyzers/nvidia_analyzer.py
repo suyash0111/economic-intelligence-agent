@@ -125,6 +125,13 @@ class NvidiaAnalyzer:
         """Handle API errors. Returns True if should retry."""
         error_str = str(error).lower()
 
+        # 400 Bad Request — non-transient, don't retry
+        if '400' in error_str or 'bad request' in error_str:
+            self.failed_requests += 1
+            logger.warning(f"Bad Request (400): {str(error)[:200]}")
+            return False
+
+        # 429 / rate limit / quota — retry with backoff
         if '429' in error_str or 'rate' in error_str or 'quota' in error_str or 'credit' in error_str:
             self.consecutive_errors += 1
             self.failed_requests += 1
@@ -147,7 +154,16 @@ class NvidiaAnalyzer:
             time.sleep(wait_time)
             return True
 
+        # 5xx server errors — retry once
+        if '500' in error_str or '502' in error_str or '503' in error_str:
+            self.failed_requests += 1
+            logger.warning(f"Server error (retryable): {str(error)[:200]}")
+            time.sleep(5)
+            return True
+
+        # Unknown errors — log and don't retry
         self.failed_requests += 1
+        logger.warning(f"Unhandled API error: {str(error)[:200]}")
         return False
 
     def _mark_success(self, credit_cost: int = 1):
@@ -163,6 +179,12 @@ class NvidiaAnalyzer:
     def _chat(self, model: str, prompt: str, max_tokens: int = 1024,
               temperature: float = 0.3, system_prompt: str = None) -> str:
         """Make a chat completion call to any NVIDIA NIM model."""
+        # Truncate prompt to avoid exceeding model context window
+        # Mistral Small 3.1 has 128K context but API may limit input
+        max_prompt_chars = 24000  # ~6k tokens, safe for all models
+        if len(prompt) > max_prompt_chars:
+            prompt = prompt[:max_prompt_chars] + "\n\n[Content truncated for length]"
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})

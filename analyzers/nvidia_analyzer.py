@@ -382,7 +382,7 @@ class NvidiaAnalyzer:
                 }
 
                 response = http_requests.post(
-                    f"{NvidiaModels.BASE_URL}/ranking",
+                    f"{NvidiaModels.BASE_URL}/reranking",
                     headers=headers,
                     json=data,
                     timeout=30
